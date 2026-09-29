@@ -5,6 +5,7 @@ import '../../models/models.dart';
 import '../../state/trip_providers.dart';
 import '../attractions/attractions_view.dart';
 import '../dashboard/trip_dashboard_screen.dart';
+import '../day_planner/day_planner_view.dart';
 import '../flights/flights_view.dart';
 import '../logistics/logistics_view.dart';
 import '../stays/stays_view.dart';
@@ -22,21 +23,28 @@ class AppNavScaffold extends ConsumerStatefulWidget {
 class _AppNavScaffoldState extends ConsumerState<AppNavScaffold> {
   int _currentIndex = 0;
 
-  void _openAddActivity([Activity? activityToEdit]) {
+  void _openAddActivity([Activity? activityToEdit, DateTime? initialDate]) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => AddActivitySheet(activityToEdit: activityToEdit),
+      builder: (ctx) => AddActivitySheet(
+        activityToEdit: activityToEdit,
+        initialDate: initialDate,
+      ),
     );
   }
 
-  void _openAddStay([Stay? stayToEdit]) {
+  void _openAddStay([Stay? stayToEdit, DateTime? initialCheckIn, DateTime? initialCheckOut]) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => AddStaySheet(stayToEdit: stayToEdit),
+      builder: (ctx) => AddStaySheet(
+        stayToEdit: stayToEdit,
+        initialCheckInDate: initialCheckIn,
+        initialCheckOutDate: initialCheckOut,
+      ),
     );
   }
 
@@ -112,7 +120,7 @@ class _AppNavScaffoldState extends ConsumerState<AppNavScaffold> {
                 title: const Text('Stay / Transition Bridge',
                     style: TextStyle(fontWeight: FontWeight.w600)),
                 subtitle:
-                    const Text('Hotel or overnight flight spanning days'),
+                    const Text('Hotel or overnight stay spanning days'),
                 onTap: () {
                   Navigator.pop(ctx);
                   _openAddStay();
@@ -150,7 +158,7 @@ class _AppNavScaffoldState extends ConsumerState<AppNavScaffold> {
     final canEdit = ref.watch(canEditActiveTripProvider);
 
     return Scaffold(
-      appBar: _currentIndex == 4 // Dashboard has its own app bar
+      appBar: _currentIndex == 5 // Dashboard has its own app bar
           ? null
           : AppBar(
               titleSpacing: 16,
@@ -225,7 +233,7 @@ class _AppNavScaffoldState extends ConsumerState<AppNavScaffold> {
                       ),
                     ),
                     onPressed: () {
-                      setState(() => _currentIndex = 4); // Switch to trips tab
+                      setState(() => _currentIndex = 5); // Switch to trips tab
                     },
                   ),
                   const SizedBox(width: 12),
@@ -235,11 +243,19 @@ class _AppNavScaffoldState extends ConsumerState<AppNavScaffold> {
       body: IndexedStack(
         index: _currentIndex,
         children: [
-          LogisticsView(
-            onOpenAddActivity: _openAddActivity,
-            onActivityTap: _openAddActivity,
+          DayPlannerView(
+            onOpenAddActivity: ([date, act]) => _openAddActivity(act, date),
+            onActivityTap: (act) => _openAddActivity(act),
             onStayTap: _openAddStay,
             onFlightTap: (f) => _openAddFlight(f),
+            onAddStayForDates: (inD, outD) => _openAddStay(null, inD, outD),
+          ),
+          LogisticsView(
+            onOpenAddActivity: ([date]) => _openAddActivity(null, date),
+            onActivityTap: (act) => _openAddActivity(act),
+            onStayTap: _openAddStay,
+            onFlightTap: (f) => _openAddFlight(f),
+            onAddStayForDates: (inD, outD) => _openAddStay(null, inD, outD),
           ),
           FlightsView(
             onAddFlight: _openAddFlight,
@@ -261,8 +277,15 @@ class _AppNavScaffoldState extends ConsumerState<AppNavScaffold> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         type: BottomNavigationBarType.fixed,
+        selectedFontSize: 11,
+        unselectedFontSize: 10,
         onTap: (idx) => setState(() => _currentIndex = idx),
         items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.view_agenda_outlined),
+            activeIcon: Icon(Icons.view_agenda_rounded),
+            label: 'Day Planner',
+          ),
           BottomNavigationBarItem(
             icon: Icon(Icons.calendar_view_week_rounded),
             activeIcon: Icon(Icons.calendar_view_week_sharp),
@@ -290,7 +313,7 @@ class _AppNavScaffoldState extends ConsumerState<AppNavScaffold> {
           ),
         ],
       ),
-      floatingActionButton: canEdit && _currentIndex != 4
+      floatingActionButton: canEdit && (_currentIndex == 0 || _currentIndex == 1)
           ? FloatingActionButton(
               onPressed: _showQuickAddOptions,
               backgroundColor: AppColors.primary,
@@ -302,3 +325,4 @@ class _AppNavScaffoldState extends ConsumerState<AppNavScaffold> {
     );
   }
 }
+

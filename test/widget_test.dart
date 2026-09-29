@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:trippy/main.dart';
+import 'package:trippy/views/day_planner/day_planner_view.dart';
 import 'package:trippy/views/logistics/widgets/day_column_widget.dart';
 import 'package:trippy/views/logistics/widgets/stay_header_bridge_widget.dart';
-import 'package:trippy/views/logistics/widgets/transport_header_bridge_widget.dart';
+import 'package:trippy/views/logistics/widgets/trip_endcap_stay_bridge_widget.dart';
 
 void main() {
-  testWidgets('Trippy app loads and renders navigation scaffold', (WidgetTester tester) async {
+  testWidgets('Trippy app loads and renders navigation scaffold with Day Planner default', (WidgetTester tester) async {
     // Increase test surface size so horizontal and vertical widgets layout cleanly
     tester.view.physicalSize = const Size(1080, 2400);
     tester.view.devicePixelRatio = 1.0;
@@ -23,24 +24,32 @@ void main() {
 
     // Verify top bar and bottom nav exist
     expect(find.text('Japan Odyssey: Tokyo & Kyoto'), findsOneWidget);
+    expect(find.text('Day Planner'), findsOneWidget);
     expect(find.text('Itinerary'), findsOneWidget);
     expect(find.text('Flights'), findsOneWidget);
     expect(find.text('Stays'), findsOneWidget);
     expect(find.text('Activities'), findsOneWidget);
     expect(find.text('Trips'), findsOneWidget);
 
+    // Verify DayPlannerView is rendered as the first and default view
+    expect(find.byType(DayPlannerView), findsOneWidget);
+
+    // Switch to Itinerary tab
+    await tester.tap(find.text('Itinerary'));
+    await tester.pumpAndSettle();
+
     // Verify day columns and stay bridges render
     expect(find.byType(DayColumnWidget), findsWidgets);
     expect(find.byType(StayHeaderBridgeWidget), findsWidgets);
-    expect(find.byType(TransportHeaderBridgeWidget), findsWidgets);
-    expect(find.text('ARRIVAL'), findsWidgets);
-    expect(find.text('DEPARTURE'), findsWidgets);
+    expect(find.byType(TripEndcapStayBridgeWidget), findsNWidgets(2));
+    expect(find.text('START'), findsOneWidget);
+    expect(find.text('FINISH'), findsOneWidget);
 
     // Verify hotel stay bridge text and night segmentation
     expect(find.text('Grand Hyatt Tokyo'), findsOneWidget);
     expect(find.text('2 nights'), findsWidgets);
-    expect(find.text('Night 1'), findsWidgets);
-    expect(find.text('Night 2'), findsWidgets);
+    expect(find.text('Night 1 • Tokyo'), findsWidgets);
+    expect(find.text('Night 2 • Tokyo'), findsWidgets);
 
     // Verify day locations render in day headers
     expect(find.text('Japan'), findsWidgets);

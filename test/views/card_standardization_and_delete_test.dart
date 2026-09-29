@@ -6,7 +6,7 @@ import 'package:trippy/models/models.dart';
 import 'package:trippy/state/trip_providers.dart';
 import 'package:trippy/views/attractions/attractions_view.dart';
 import 'package:trippy/views/logistics/logistics_view.dart';
-import 'package:trippy/views/logistics/widgets/transport_header_bridge_widget.dart';
+import 'package:trippy/views/logistics/widgets/flight_day_card_widget.dart';
 import 'package:trippy/views/stays/stays_view.dart';
 
 class _FakeActiveTripIdNotifier extends ActiveTripIdNotifier {
@@ -136,18 +136,12 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      // Find Arrival Header
-      final arrivalHeaderFinder = find.byWidgetPredicate(
-        (w) => w is TransportHeaderBridgeWidget && w.mode == TransportHeaderMode.arrival,
-      );
-      expect(arrivalHeaderFinder, findsOneWidget);
-      expect(
-        find.descendant(of: arrivalHeaderFinder, matching: find.textContaining('NH203')),
-        findsOneWidget,
-      );
+      // Find Arrival Flight Card inside the day column
+      final arrivalFlightCardFinder = find.textContaining('NH203');
+      expect(arrivalFlightCardFinder, findsOneWidget);
 
-      // Tap on the Arrival Header
-      await tester.tap(arrivalHeaderFinder);
+      // Tap on the Arrival Flight Card
+      await tester.tap(arrivalFlightCardFinder);
       await tester.pumpAndSettle();
 
       expect(tappedFlight, isNotNull);
@@ -155,7 +149,7 @@ void main() {
       expect(tappedFlight!.isMainArrival, isTrue);
     });
 
-    testWidgets('Tapping Departure header calls onFlightTap with departure flight',
+    testWidgets('Tapping Departure flight card calls onFlightTap with departure flight',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1920, 1080);
       tester.view.devicePixelRatio = 1.0;
@@ -185,18 +179,15 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      // Find Departure Header
-      final departureHeaderFinder = find.byWidgetPredicate(
-        (w) => w is TransportHeaderBridgeWidget && w.mode == TransportHeaderMode.departure,
+      // Find Departure Flight Card inside the day column
+      final departureFlightCardFinder = find.descendant(
+        of: find.byType(FlightDayCardWidget),
+        matching: find.textContaining('JL060'),
       );
-      expect(departureHeaderFinder, findsOneWidget);
-      expect(
-        find.descendant(of: departureHeaderFinder, matching: find.textContaining('JL060')),
-        findsOneWidget,
-      );
+      expect(departureFlightCardFinder, findsOneWidget);
 
-      // Tap on the Departure Header
-      await tester.tap(departureHeaderFinder);
+      // Tap on the Departure Flight Card
+      await tester.tap(departureFlightCardFinder);
       await tester.pumpAndSettle();
 
       expect(tappedFlight, isNotNull);

@@ -12,6 +12,8 @@ class Trip {
   final MemberRole defaultInviteRole; // Role assigned to users joining with inviteCode
   final Map<String, MemberRole> members; // userId -> MemberRole
   final Map<String, List<String>> dayLocations; // "YYYY-MM-DD" -> List of location names
+  final String? startLocation; // e.g. "San Francisco" or origin city
+  final String? endLocation; // e.g. "San Francisco" or return city
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -27,23 +29,24 @@ class Trip {
     this.defaultInviteRole = MemberRole.editor,
     required this.members,
     this.dayLocations = const {},
+    this.startLocation,
+    this.endLocation,
     required this.createdAt,
     required this.updatedAt,
   });
 
   /// Total days in the trip (inclusive of start and end dates)
   int get daysCount {
-    final s = DateTime(startDate.year, startDate.month, startDate.day);
-    final e = DateTime(endDate.year, endDate.month, endDate.day);
-    return e.difference(s).inDays + 1;
+    final sUtc = DateTime.utc(startDate.year, startDate.month, startDate.day);
+    final eUtc = DateTime.utc(endDate.year, endDate.month, endDate.day);
+    return eUtc.difference(sUtc).inDays + 1;
   }
 
   /// Generates a list of all normalized dates (one for each consecutive day)
   List<DateTime> get daysList {
     final list = <DateTime>[];
-    final start = DateTime(startDate.year, startDate.month, startDate.day);
     for (int i = 0; i < daysCount; i++) {
-      list.add(start.add(Duration(days: i)));
+      list.add(DateTime(startDate.year, startDate.month, startDate.day + i));
     }
     return list;
   }
@@ -86,6 +89,8 @@ class Trip {
     MemberRole? defaultInviteRole,
     Map<String, MemberRole>? members,
     Map<String, List<String>>? dayLocations,
+    String? startLocation,
+    String? endLocation,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -101,6 +106,8 @@ class Trip {
       defaultInviteRole: defaultInviteRole ?? this.defaultInviteRole,
       members: members ?? this.members,
       dayLocations: dayLocations ?? this.dayLocations,
+      startLocation: startLocation ?? this.startLocation,
+      endLocation: endLocation ?? this.endLocation,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -119,6 +126,8 @@ class Trip {
       'defaultInviteRole': defaultInviteRole.toJson(),
       'members': members.map((key, value) => MapEntry(key, value.toJson())),
       'dayLocations': dayLocations.map((k, v) => MapEntry(k, List<dynamic>.from(v))),
+      if (startLocation != null) 'startLocation': startLocation,
+      if (endLocation != null) 'endLocation': endLocation,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
     };
@@ -150,6 +159,8 @@ class Trip {
       defaultInviteRole: MemberRole.fromString(map['defaultInviteRole'] as String?),
       members: parsedMembers,
       dayLocations: parsedDayLocations,
+      startLocation: map['startLocation'] as String?,
+      endLocation: map['endLocation'] as String?,
       createdAt: DateTime.parse(map['createdAt'] as String),
       updatedAt: DateTime.parse(map['updatedAt'] as String),
     );

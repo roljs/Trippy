@@ -4,6 +4,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/utils/date_formatters.dart';
 import '../../models/models.dart';
 import '../../state/trip_providers.dart';
+import '../common/add_activity_sheet.dart';
 import '../common/add_flight_sheet.dart';
 
 class FlightsView extends ConsumerWidget {
@@ -130,7 +131,7 @@ class FlightsView extends ConsumerWidget {
   }
 }
 
-class _FlightCard extends StatelessWidget {
+class _FlightCard extends ConsumerWidget {
   final Flight flight;
   final bool canEdit;
   final VoidCallback? onTap;
@@ -144,7 +145,7 @@ class _FlightCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       clipBehavior: Clip.antiAlias,
@@ -523,12 +524,235 @@ class _FlightCard extends StatelessWidget {
                 ),
               ),
             ],
+
+            // Airport Ground Transfers Section
+            Builder(
+              builder: (context) {
+                final activities = ref.watch(activeTripActivitiesProvider).value ?? [];
+                final linkedTransfers = activities.where((a) =>
+                    flight.linkedActivityIds.contains(a.id) || a.flightId == flight.id
+                ).toList();
+
+                if (linkedTransfers.isEmpty && !canEdit) {
+                  return const SizedBox.shrink();
+                }
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 14),
+                    const Divider(height: 1),
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.directions_subway_rounded, size: 16, color: AppColors.transport),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Airport Ground Transfers (${linkedTransfers.length})',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.transport,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (canEdit)
+                          InkWell(
+                            onTap: () => _showLinkTransferDialog(context, ref, flight, activities),
+                            borderRadius: BorderRadius.circular(6),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: AppColors.transportContainer.withValues(alpha: 0.3),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: AppColors.transport.withValues(alpha: 0.4)),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.add_link_rounded, size: 13, color: AppColors.transport),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    'Link Transfer',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.transport,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    if (linkedTransfers.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      ...linkedTransfers.map((xfer) {
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey.shade200),
+                          ),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: () {
+                              showModalBottomSheet(
+                                context: context,
+                                isScrollControlled: true,
+                                backgroundColor: Colors.transparent,
+                                builder: (ctx) => AddActivitySheet(activityToEdit: xfer),
+                              );
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.directions_car_rounded, size: 16, color: AppColors.transport),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          xfer.title,
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppColors.textPrimary,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        Text(
+                                          '${DateFormatters.shortDate.format(xfer.date)}  •  ${DateFormatters.formatTimeString(xfer.startTime)}${xfer.location != null ? "  •  ${xfer.location}" : ""}',
+                                          style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const Icon(Icons.chevron_right_rounded, size: 16, color: AppColors.textMuted),
+                                  if (canEdit) ...[
+                                    const SizedBox(width: 4),
+                                    IconButton(
+                                      icon: const Icon(Icons.link_off_rounded, size: 16, color: Colors.red),
+                                      tooltip: 'Unlink Transfer',
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                      onPressed: () async {
+                                        final repo = ref.read(tripRepositoryProvider);
+                                        final remainingIds = flight.linkedActivityIds.where((id) => id != xfer.id).toList();
+                                        await repo.updateFlight(flight.copyWith(linkedActivityIds: remainingIds));
+                                        await repo.updateActivity(xfer.copyWith(flightId: null));
+                                      },
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
+                  ],
+                );
+              },
+            ),
           ],
         ),
       ),
     ),
   );
 }
+
+  void _showLinkTransferDialog(BuildContext context, WidgetRef ref, Flight flight, List<Activity> activities) {
+    final availableToLink = activities.where((a) =>
+      !flight.linkedActivityIds.contains(a.id) && a.flightId != flight.id
+    ).toList()
+      ..sort((a, b) {
+        if (a.category == ActivityCategory.transport && b.category != ActivityCategory.transport) return -1;
+        if (a.category != ActivityCategory.transport && b.category == ActivityCategory.transport) return 1;
+        return a.date.compareTo(b.date);
+      });
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.add_link_rounded, color: AppColors.transport, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Link Transfer to ${flight.flightNumber}',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: availableToLink.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Text(
+                    'No available activities to link. Create a transport activity first.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppColors.textSecondary),
+                  ),
+                )
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: availableToLink.length,
+                  itemBuilder: (c, idx) {
+                    final act = availableToLink[idx];
+                    final isTransport = act.category == ActivityCategory.transport;
+                    return ListTile(
+                      dense: true,
+                      leading: Icon(
+                        isTransport ? Icons.directions_subway_rounded : Icons.local_activity_rounded,
+                        color: isTransport ? AppColors.transport : AppColors.primary,
+                        size: 20,
+                      ),
+                      title: Text(act.title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                      subtitle: Text(
+                        '${DateFormatters.shortDate.format(act.date)}  •  ${DateFormatters.formatTimeString(act.startTime)}',
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                      onTap: () async {
+                        final repo = ref.read(tripRepositoryProvider);
+                        final updatedLinked = {...flight.linkedActivityIds, act.id}.toList();
+                        await repo.updateFlight(flight.copyWith(linkedActivityIds: updatedLinked));
+                        await repo.updateActivity(act.copyWith(flightId: flight.id));
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Linked "${act.title}" to ${flight.flightNumber}')),
+                          );
+                        }
+                      },
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _FlightDetailBadge extends StatelessWidget {

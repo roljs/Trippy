@@ -49,6 +49,7 @@ const StayGradientPalette overnightFlightPalette = StayGradientPalette(
 
 class StayHeaderBridgeWidget extends StatelessWidget {
   final Stay? stay;
+  final String? cityName;
   final double width;
   final int spanDays;
   final int startNightNumber;
@@ -58,6 +59,7 @@ class StayHeaderBridgeWidget extends StatelessWidget {
   const StayHeaderBridgeWidget({
     super.key,
     required this.stay,
+    this.cityName,
     this.width = 600.0,
     this.spanDays = 2,
     this.startNightNumber = 1,
@@ -69,43 +71,102 @@ class StayHeaderBridgeWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     if (stay == null) {
       // Empty bridge slot for days with no lodging
+      final content = Container(
+        height: 64,
+        margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
+        decoration: BoxDecoration(
+          color: onTap != null
+              ? Colors.white.withValues(alpha: 0.8)
+              : Colors.white.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: onTap != null ? Colors.grey.shade400 : Colors.grey.shade300,
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.bed_outlined, size: 16, color: Colors.grey.shade500),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                'No lodging recorded for this night',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade600,
+                  fontStyle: FontStyle.italic,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (onTap != null) ...[
+              const SizedBox(width: 6),
+              Icon(Icons.add_circle_outline_rounded,
+                  size: 15, color: Colors.blueGrey.shade600),
+            ],
+          ],
+        ),
+      );
+
+      final emptyCityText = (cityName != null && cityName!.isNotEmpty) ? ' • $cityName' : '';
       return SizedBox(
         width: width,
         height: 90,
         child: Column(
           children: [
-            const SizedBox(height: 20),
-            Container(
-              height: 64,
-              margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.6),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: Colors.grey.shade300,
-                  width: 1,
+            SizedBox(
+              width: width,
+              height: 18,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 1.5),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade600.withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.45),
+                      width: 0.8,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.10),
+                        blurRadius: 3,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                  child: Text(
+                    'Night $startNightNumber$emptyCityText',
+                    style: const TextStyle(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.4,
+                      color: Colors.white,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.bed_outlined, size: 16, color: Colors.grey.shade400),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      'No lodging recorded for this night',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade400,
-                        fontStyle: FontStyle.italic,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
             ),
+            const SizedBox(height: 2),
+            if (onTap != null)
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: onTap,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Tooltip(
+                    message: 'Tap to add lodging for this night',
+                    child: content,
+                  ),
+                ),
+              )
+            else
+              content,
           ],
         ),
       );
@@ -114,8 +175,8 @@ class StayHeaderBridgeWidget extends StatelessWidget {
     final isOvernightFlight = stay!.type == StayType.overnightFlight;
     final activePalette = palette ??
         (isOvernightFlight ? overnightFlightPalette : stayPalettes[0]);
-
     final numNights = stay!.nights > 0 ? stay!.nights : spanDays;
+    final stayCityText = (cityName != null && cityName!.isNotEmpty) ? ' • $cityName' : '';
 
     return SizedBox(
       width: width,
@@ -152,13 +213,15 @@ class StayHeaderBridgeWidget extends StatelessWidget {
                           ],
                         ),
                         child: Text(
-                          'Night ${startNightNumber + s}',
+                          'Night ${startNightNumber + s}$stayCityText',
                           style: const TextStyle(
                             fontSize: 9.5,
                             fontWeight: FontWeight.w800,
                             letterSpacing: 0.4,
                             color: Colors.white,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ),

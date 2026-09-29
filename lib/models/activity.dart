@@ -4,6 +4,7 @@ enum ActivityCategory {
   transport,
   entertainment,
   flight,
+  stay,
   custom;
 
   String get displayName {
@@ -18,6 +19,8 @@ enum ActivityCategory {
         return 'Entertainment';
       case ActivityCategory.flight:
         return 'Flight';
+      case ActivityCategory.stay:
+        return 'Hotel & Stay';
       case ActivityCategory.custom:
         return 'Other';
     }
@@ -33,6 +36,10 @@ enum ActivityCategory {
         return ActivityCategory.entertainment;
       case 'flight':
         return ActivityCategory.flight;
+      case 'stay':
+      case 'hotel':
+      case 'lodging':
+        return ActivityCategory.stay;
       case 'custom':
         return ActivityCategory.custom;
       case 'attraction':
@@ -90,6 +97,8 @@ class Activity {
   final String? notes;
   final double? cost;
   final bool isCompleted;
+  final String? stayId; // Optional link to a Stay
+  final String? flightId; // Optional link to a Flight
 
   const Activity({
     required this.id,
@@ -106,6 +115,8 @@ class Activity {
     this.notes,
     this.cost,
     this.isCompleted = false,
+    this.stayId,
+    this.flightId,
   });
 
   /// Combines date and startTime for accurate chronological sorting
@@ -131,6 +142,8 @@ class Activity {
     String? notes,
     double? cost,
     bool? isCompleted,
+    String? stayId,
+    String? flightId,
   }) {
     return Activity(
       id: id ?? this.id,
@@ -147,6 +160,8 @@ class Activity {
       notes: notes ?? this.notes,
       cost: cost ?? this.cost,
       isCompleted: isCompleted ?? this.isCompleted,
+      stayId: stayId ?? this.stayId,
+      flightId: flightId ?? this.flightId,
     );
   }
 
@@ -166,6 +181,8 @@ class Activity {
       'notes': notes,
       'cost': cost,
       'isCompleted': isCompleted,
+      if (stayId != null) 'stayId': stayId,
+      if (flightId != null) 'flightId': flightId,
     };
   }
 
@@ -185,6 +202,8 @@ class Activity {
       notes: map['notes'] as String?,
       cost: (map['cost'] as num?)?.toDouble(),
       isCompleted: map['isCompleted'] as bool? ?? false,
+      stayId: map['stayId'] as String?,
+      flightId: map['flightId'] as String?,
     );
   }
 }

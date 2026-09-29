@@ -1,0 +1,79 @@
+{
+    "version": 1,
+    "trip": {
+        "id": "trip_example_2026",
+        "title": "Iceland Ring Road Adventure",
+        "destination": "Reykjavik, Iceland",
+        "startDate": "2026-06-01T00:00:00.000",
+        "endDate": "2026-06-05T00:00:00.000",
+        "coverImageUrl": null,
+        "ownerId": "user_current",
+        "inviteCode": "ICE-9921",
+        "defaultInviteRole": "editor",
+        "members": {
+            "user_current": "owner"
+        },
+        "dayLocations": {
+            "2026-06-01": [
+                "Iceland",
+                "Reykjavik"
+            ]
+        },
+        "createdAt": "2026-01-01T00:00:00.000",
+        "updatedAt": "2026-01-01T00:00:00.000"
+    },
+    "stays": [
+        {
+            "id": "stay_01",
+            "tripId": "trip_example_2026",
+            "type": "hotel",
+            "name": "ION Adventure Hotel",
+            "address": "Nesjavellir, Iceland",
+            "checkInDate": "2026-06-01T00:00:00.000",
+            "checkInTime": "15:00",
+            "checkOutDate": "2026-06-03T00:00:00.000",
+            "checkOutTime": "11:00",
+            "confirmationCode": "ION-4411",
+            "notes": "Mountain view room"
+        }
+    ],
+    "activities": [
+        {
+            "id": "act_01",
+            "tripId": "trip_example_2026",
+            "date": "2026-06-01T00:00:00.000",
+            "startTime": "14:00",
+            "endTime": "17:00",
+            "title": "Blue Lagoon Geothermal Spa",
+            "category": "attraction",
+            "location": "Grindavík, Iceland",
+            "notes": "Towels included",
+            "cost": 85.0,
+            "bookingStatus": "booked",
+            "confirmationRef": "BL-9921",
+            "ticketUrl": null,
+            "isCompleted": false
+        }
+    ],
+    "flights": [
+        {
+            "id": "flt_01",
+            "tripId": "trip_example_2026",
+            "airline": "Icelandair",
+            "flightNumber": "FI614",
+            "departureAirport": "JFK",
+            "arrivalAirport": "KEF",
+            "departureTime": "2026-05-31T20:00:00.000",
+            "arrivalTime": "2026-06-01T06:00:00.000",
+            "isOvernight": true,
+            "isNightStay": false,
+            "isMainArrival": true,
+            "isMainDeparture": false,
+            "terminal": "4",
+            "gate": "B22",
+            "seat": "14A",
+            "bookingRef": "ICEAIR-123",
+            "notes": null
+        }
+    ]
+}

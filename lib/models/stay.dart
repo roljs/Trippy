@@ -51,6 +51,7 @@ class Stay {
   final String? confirmationCode;
   final String? notes;
   final Flight? overnightFlight;
+  final List<String> linkedActivityIds;
 
   const Stay({
     required this.id,
@@ -65,11 +66,16 @@ class Stay {
     this.confirmationCode,
     this.notes,
     this.overnightFlight,
+    this.linkedActivityIds = const [],
   });
 
   /// Calculates number of nights of this stay
   int get nights {
-    final diff = checkOutDate.difference(checkInDate).inDays;
+    final inUtc =
+        DateTime.utc(checkInDate.year, checkInDate.month, checkInDate.day);
+    final outUtc =
+        DateTime.utc(checkOutDate.year, checkOutDate.month, checkOutDate.day);
+    final diff = outUtc.difference(inUtc).inDays;
     return diff > 0 ? diff : 1;
   }
 
@@ -96,6 +102,7 @@ class Stay {
     String? confirmationCode,
     String? notes,
     Flight? overnightFlight,
+    List<String>? linkedActivityIds,
   }) {
     return Stay(
       id: id ?? this.id,
@@ -110,6 +117,7 @@ class Stay {
       confirmationCode: confirmationCode ?? this.confirmationCode,
       notes: notes ?? this.notes,
       overnightFlight: overnightFlight ?? this.overnightFlight,
+      linkedActivityIds: linkedActivityIds ?? this.linkedActivityIds,
     );
   }
 
@@ -127,6 +135,7 @@ class Stay {
       'confirmationCode': confirmationCode,
       'notes': notes,
       'overnightFlight': overnightFlight?.toMap(),
+      'linkedActivityIds': linkedActivityIds,
     };
   }
 
@@ -146,6 +155,10 @@ class Stay {
       overnightFlight: map['overnightFlight'] != null
           ? Flight.fromMap(map['overnightFlight'] as Map<String, dynamic>)
           : null,
+      linkedActivityIds: (map['linkedActivityIds'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
     );
   }
 }

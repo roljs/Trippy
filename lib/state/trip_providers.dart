@@ -31,6 +31,20 @@ class ActiveTripIdNotifier extends Notifier<String?> {
 final activeTripIdProvider =
     NotifierProvider<ActiveTripIdNotifier, String?>(ActiveTripIdNotifier.new);
 
+// Itinerary View Mode: Full View vs Compact View vs Map View
+enum ItineraryViewMode { full, compact, map }
+
+class ItineraryViewModeNotifier extends Notifier<ItineraryViewMode> {
+  @override
+  ItineraryViewMode build() => ItineraryViewMode.full;
+
+  void setMode(ItineraryViewMode mode) => state = mode;
+}
+
+final itineraryViewModeProvider =
+    NotifierProvider<ItineraryViewModeNotifier, ItineraryViewMode>(
+        ItineraryViewModeNotifier.new);
+
 // Stream of all trips for current user
 final userTripsProvider = StreamProvider<List<Trip>>((ref) {
   final repo = ref.watch(tripRepositoryProvider);

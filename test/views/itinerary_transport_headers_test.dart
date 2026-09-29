@@ -141,5 +141,28 @@ void main() {
       expect(find.text('Night 2'), findsOneWidget);
       expect(find.text('Night 3'), findsOneWidget);
     });
+
+    testWidgets('Renders empty stay placeholder with clickable onTap callback',
+        (WidgetTester tester) async {
+      bool tapped = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StayHeaderBridgeWidget(
+              stay: null,
+              width: 310.0,
+              onTap: () => tapped = true,
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('No lodging recorded for this night'), findsOneWidget);
+      expect(find.byIcon(Icons.add_circle_outline_rounded), findsOneWidget);
+
+      await tester.tap(find.text('No lodging recorded for this night'));
+      expect(tapped, isTrue);
+    });
   });
 }

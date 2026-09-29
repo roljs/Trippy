@@ -49,6 +49,8 @@ class MockTripRepository implements TripRepository {
         Trip.dateToKey(day4): ['Japan', 'Kyoto'],
         Trip.dateToKey(day5): ['Japan', 'Osaka'],
       },
+      startLocation: 'San Francisco, CA',
+      endLocation: 'San Francisco, CA',
       createdAt: now.subtract(const Duration(days: 10)),
       updatedAt: now,
     );
@@ -356,6 +358,8 @@ class MockTripRepository implements TripRepository {
         Trip.dateToKey(itDay5): ['Italy', 'Positano'],
         Trip.dateToKey(itDay6): ['Italy', 'Naples'],
       },
+      startLocation: 'New York (JFK)',
+      endLocation: 'New York (JFK)',
       createdAt: now.subtract(const Duration(days: 5)),
       updatedAt: now,
     );
@@ -654,6 +658,9 @@ class MockTripRepository implements TripRepository {
   Future<void> deleteTrip(String tripId) async {
     _trips.removeWhere((t) => t.id == tripId);
     _tripsController.add(List.unmodifiable(_trips));
+    _stays.remove(tripId);
+    _activities.remove(tripId);
+    _flights.remove(tripId);
   }
 
   @override
@@ -768,6 +775,17 @@ class MockTripRepository implements TripRepository {
         _getFlightsController(tripId).add(List.unmodifiable(flightsList));
       }
     }
+
+    // Deleting the stay should remove the linked activities
+    final actList = _activities[tripId];
+    if (actList != null) {
+      final linkedIds = removedStay?.linkedActivityIds ?? const [];
+      final beforeCount = actList.length;
+      actList.removeWhere((a) => a.stayId == stayId || linkedIds.contains(a.id));
+      if (actList.length != beforeCount) {
+        _getActivitiesController(tripId).add(List.unmodifiable(actList));
+      }
+    }
   }
 
   // Activities
@@ -810,9 +828,49 @@ class MockTripRepository implements TripRepository {
   @override
   Future<void> deleteActivity(String tripId, String activityId) async {
     final list = _activities[tripId];
+    Activity? removedActivity;
     if (list != null) {
-      list.removeWhere((a) => a.id == activityId);
-      _getActivitiesController(tripId).add(List.unmodifiable(list));
+      final idx = list.indexWhere((a) => a.id == activityId);
+      if (idx != -1) {
+        removedActivity = list.removeAt(idx);
+        _getActivitiesController(tripId).add(List.unmodifiable(list));
+      }
+    }
+
+    // If activity was linked to a flight, unlink it
+    final flightList = _flights[tripId];
+    if (flightList != null && removedActivity != null) {
+      final targetFlightId = removedActivity.flightId;
+      bool flightChanged = false;
+      for (int i = 0; i < flightList.length; i++) {
+        final f = flightList[i];
+        if (f.id == targetFlightId || f.linkedActivityIds.contains(activityId)) {
+          final updatedLinks = List<String>.from(f.linkedActivityIds)..remove(activityId);
+          flightList[i] = f.copyWith(linkedActivityIds: updatedLinks);
+          flightChanged = true;
+        }
+      }
+      if (flightChanged) {
+        _getFlightsController(tripId).add(List.unmodifiable(flightList));
+      }
+    }
+
+    // If activity was linked to a stay, unlink it
+    final stayList = _stays[tripId];
+    if (stayList != null && removedActivity != null) {
+      final targetStayId = removedActivity.stayId;
+      bool stayChanged = false;
+      for (int i = 0; i < stayList.length; i++) {
+        final s = stayList[i];
+        if (s.id == targetStayId || s.linkedActivityIds.contains(activityId)) {
+          final updatedLinks = List<String>.from(s.linkedActivityIds)..remove(activityId);
+          stayList[i] = s.copyWith(linkedActivityIds: updatedLinks);
+          stayChanged = true;
+        }
+      }
+      if (stayChanged) {
+        _getStaysController(tripId).add(List.unmodifiable(stayList));
+      }
     }
   }
 
@@ -855,10 +913,25 @@ class MockTripRepository implements TripRepository {
 
   @override
   Future<void> deleteFlight(String tripId, String flightId) async {
+    Flight? removedFlight;
     final list = _flights[tripId];
     if (list != null) {
-      list.removeWhere((f) => f.id == flightId);
-      _getFlightsController(tripId).add(List.unmodifiable(list));
+      final idx = list.indexWhere((f) => f.id == flightId);
+      if (idx != -1) {
+        removedFlight = list.removeAt(idx);
+        _getFlightsController(tripId).add(List.unmodifiable(list));
+      }
+    }
+
+    // Deleting the flight should remove the linked activities
+    final actList = _activities[tripId];
+    if (actList != null) {
+      final linkedIds = removedFlight?.linkedActivityIds ?? const [];
+      final beforeCount = actList.length;
+      actList.removeWhere((a) => a.flightId == flightId || linkedIds.contains(a.id));
+      if (actList.length != beforeCount) {
+        _getActivitiesController(tripId).add(List.unmodifiable(actList));
+      }
     }
   }
 }

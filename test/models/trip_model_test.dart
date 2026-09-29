@@ -32,6 +32,38 @@ void main() {
       expect(days[4], DateTime(2026, 10, 16));
     });
 
+    test('Calculates daysList correctly across November 1 DST transition without duplicating dates', () {
+      final start = DateTime(2026, 11, 1);
+      final end = DateTime(2026, 11, 25);
+
+      final trip = Trip(
+        id: 'test_nov_trip',
+        title: 'November Journey',
+        destination: 'Thailand',
+        startDate: start,
+        endDate: end,
+        ownerId: 'user_1',
+        inviteCode: 'NOV-1234',
+        defaultInviteRole: MemberRole.editor,
+        members: {'user_1': MemberRole.owner},
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+
+      expect(trip.daysCount, 25);
+      final days = trip.daysList;
+      expect(days.length, 25);
+      expect(days[0], DateTime(2026, 11, 1));
+      expect(days[1], DateTime(2026, 11, 2)); // Day 2 must be Nov 2, NOT Nov 1!
+      expect(days[2], DateTime(2026, 11, 3));
+      expect(days[24], DateTime(2026, 11, 25));
+
+      // Ensure every consecutive day has distinct consecutive calendar days
+      for (int i = 0; i < days.length - 1; i++) {
+        expect(days[i].day, isNot(equals(days[i + 1].day)));
+      }
+    });
+
     test('Validates role permissions for Owner, Editor, and Viewer', () {
       final trip = Trip(
         id: 'test_trip',

@@ -8,10 +8,14 @@ import '../../state/trip_providers.dart';
 import 'widgets/day_column_widget.dart';
 import 'widgets/manage_day_locations_dialog.dart';
 import 'widgets/stay_header_bridge_widget.dart';
-import 'widgets/transport_header_bridge_widget.dart';
+import 'widgets/compact_itinerary_view.dart';
+import 'widgets/map_itinerary_view.dart';
+import 'widgets/trip_endcap_stay_bridge_widget.dart';
+import '../../core/utils/city_color_helper.dart';
 import '../../core/utils/location_inference_helper.dart';
 
 import '../common/add_flight_sheet.dart';
+import '../common/add_stay_sheet.dart';
 
 class AppHorizontalScrollBehavior extends MaterialScrollBehavior {
   const AppHorizontalScrollBehavior();
@@ -26,10 +30,11 @@ class AppHorizontalScrollBehavior extends MaterialScrollBehavior {
 }
 
 class LogisticsView extends ConsumerStatefulWidget {
-  final VoidCallback? onOpenAddActivity;
+  final void Function([DateTime? initialDate])? onOpenAddActivity;
   final ValueChanged<Activity>? onActivityTap;
   final ValueChanged<Stay>? onStayTap;
   final ValueChanged<Flight>? onFlightTap;
+  final void Function(DateTime checkIn, DateTime checkOut)? onAddStayForDates;
 
   const LogisticsView({
     super.key,
@@ -37,6 +42,7 @@ class LogisticsView extends ConsumerStatefulWidget {
     this.onActivityTap,
     this.onStayTap,
     this.onFlightTap,
+    this.onAddStayForDates,
   });
 
   @override
@@ -95,6 +101,88 @@ class _LogisticsViewState extends ConsumerState<LogisticsView> {
     }
   }
 
+  void _openAddStay(BuildContext context,
+      {DateTime? checkIn, DateTime? checkOut}) {
+    if (widget.onAddStayForDates != null &&
+        checkIn != null &&
+        checkOut != null) {
+      widget.onAddStayForDates!(checkIn, checkOut);
+    } else {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => AddStaySheet(
+          initialCheckInDate: checkIn,
+          initialCheckOutDate: checkOut,
+        ),
+      );
+    }
+  }
+
+  void _openEditTripLocations(BuildContext context, Trip trip) {
+    final startController =
+        TextEditingController(text: trip.startLocation ?? '');
+    final endController = TextEditingController(text: trip.endLocation ?? '');
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Trip Start & Finish Locations'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Specify the starting and finishing locations for this trip.',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: startController,
+                decoration: const InputDecoration(
+                  labelText: 'Starting Location (Origin)',
+                  hintText: 'e.g. San Francisco or Origin City',
+                  helperText: 'Displayed at the start of the Itinerary',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: endController,
+                decoration: const InputDecoration(
+                  labelText: 'Finishing Location (Return)',
+                  hintText: 'e.g. San Francisco or Return City',
+                  helperText: 'Displayed at the end of the Itinerary',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final newStart = startController.text.trim();
+              final newEnd = endController.text.trim();
+              final updated = trip.copyWith(
+                startLocation: newStart.isNotEmpty ? newStart : null,
+                endLocation: newEnd.isNotEmpty ? newEnd : null,
+                updatedAt: DateTime.now(),
+              );
+              await ref.read(tripRepositoryProvider).updateTrip(updated);
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final trip = ref.watch(activeTripProvider);
@@ -104,6 +192,7 @@ class _LogisticsViewState extends ConsumerState<LogisticsView> {
     final flightsAsync = ref.watch(activeTripFlightsProvider);
     final activitiesAsync = ref.watch(activeTripActivitiesProvider);
     final repo = ref.watch(tripRepositoryProvider);
+    final viewMode = ref.watch(itineraryViewModeProvider);
 
     if (trip == null) {
       return const Center(
@@ -138,67 +227,22 @@ class _LogisticsViewState extends ConsumerState<LogisticsView> {
         final List<double> trackEndPositions = [];
         double maxStayRight = 0.0;
 
-        // 1. Resolve Day 1 Arrival Transport Header Data
-        final day1 = days.first;
-        final lastDay = days.last;
-
-        TransportHeaderData? arrivalData;
-        final allFlights = flightsAsync.value ?? [];
-        final explicitArrivalFlight =
-            allFlights.where((f) => f.isMainArrival).firstOrNull;
-        final arrivalFlight = explicitArrivalFlight ??
-            allFlights.where((f) {
-              final d = DateTime(
-                  f.arrivalTime.year, f.arrivalTime.month, f.arrivalTime.day);
-              final t = DateTime(day1.year, day1.month, day1.day);
-              return d.isAtSameMomentAs(t) || d.isBefore(t);
-            }).firstOrNull;
-
-        if (arrivalFlight != null) {
-          arrivalData = TransportHeaderData.fromFlight(
-              arrivalFlight, TransportHeaderMode.arrival);
-        } else {
-          final day1Activities = activitiesByDay[day1] ?? [];
-          final arrivalAct = day1Activities.where((a) =>
-              a.category == ActivityCategory.flight ||
-              a.category == ActivityCategory.transport ||
-              a.title.toLowerCase().contains('arrival') ||
-              a.title.toLowerCase().contains('flight')).firstOrNull;
-
-          if (arrivalAct != null) {
-            arrivalData = TransportHeaderData.fromActivity(
-                arrivalAct, TransportHeaderMode.arrival);
-          } else {
-            arrivalData = TransportHeaderData.placeholder(
-              mode: TransportHeaderMode.arrival,
-              destination: trip.destination,
-              type: TransportType.flight,
-            );
-          }
-        }
-
-        // Add Arrival Header on Day 1 (starts 50% width left of Day 1, ends at Day 1 center)
-        final double arrivalLeft = columnCenter(0) - columnWidth; // 10.0
-        final double arrivalRight = columnCenter(0); // 300.0
-        trackEndPositions.add(arrivalRight);
+        // 1. Add Special Beginning Stay Card (Starts at 50% offset of Day 1, ends at Day 1 midpoint)
+        final double startStayLeft = columnCenter(0) - (columnWidth / 2);
+        final double startStayWidth = columnWidth / 2;
+        final double startStayRight = startStayLeft + startStayWidth; // columnCenter(0)
+        trackEndPositions.add(startStayRight);
 
         stayWidgets.add(
           Positioned(
-            left: arrivalLeft,
+            left: startStayLeft,
             top: 0,
-            child: TransportHeaderBridgeWidget(
-              mode: TransportHeaderMode.arrival,
-              data: arrivalData,
-              width: columnWidth,
-              onTap: () {
-                if (arrivalData?.flight != null) {
-                  _openFlightEdit(context, arrivalData!.flight!);
-                } else if (arrivalData?.activity != null) {
-                  widget.onActivityTap?.call(arrivalData!.activity!);
-                } else {
-                  widget.onOpenAddActivity?.call();
-                }
-              },
+            child: TripEndcapStayBridgeWidget(
+              type: TripEndcapType.start,
+              locationName: trip.startLocation ?? 'Origin',
+              width: startStayWidth,
+              onTap:
+                  canEdit ? () => _openEditTripLocations(context, trip) : null,
             ),
           ),
         );
@@ -246,9 +290,10 @@ class _LogisticsViewState extends ConsumerState<LogisticsView> {
             trackEndPositions.add(rightPos);
           }
 
-          final palette = stay.type == StayType.overnightFlight
-              ? overnightFlightPalette
-              : stayPalettes[k % stayPalettes.length];
+          final palette = CityColorHelper.getStayPalette(
+            stay: stay,
+            allStaysInTrip: stays,
+          );
 
           stayWidgets.add(
             Positioned(
@@ -256,6 +301,7 @@ class _LogisticsViewState extends ConsumerState<LogisticsView> {
               top: trackIndex * 94.0,
               child: StayHeaderBridgeWidget(
                 stay: stay,
+                cityName: CityColorHelper.extractCityForStay(stay),
                 width: staySpanWidth,
                 spanDays: nights,
                 startNightNumber: startIndex + 1,
@@ -266,96 +312,136 @@ class _LogisticsViewState extends ConsumerState<LogisticsView> {
           );
         }
 
-        // Add empty slots for any uncovered night transitions
+        // 3. Render Multi-Day Flights (ONLY flights spanning 2 or more days appear horizontally)
+        final allFlights = flightsAsync.value ?? [];
+        final multiDayFlights = allFlights.where((f) {
+          final depD = DateTime(
+              f.departureTime.year, f.departureTime.month, f.departureTime.day);
+          final arrD = DateTime(
+              f.arrivalTime.year, f.arrivalTime.month, f.arrivalTime.day);
+          return f.isOvernight || arrD.difference(depD).inDays >= 1;
+        }).toList();
+
+        for (final flight in multiDayFlights) {
+          final depD = DateTime(flight.departureTime.year,
+              flight.departureTime.month, flight.departureTime.day);
+          final arrD = DateTime(flight.arrivalTime.year,
+              flight.arrivalTime.month, flight.arrivalTime.day);
+          int startIdx = _findDayIndex(days, depD);
+          int endIdx = _findDayIndex(days, arrD);
+          if (endIdx <= startIdx) endIdx = startIdx + 1;
+          int spanDays = endIdx - startIdx;
+
+          final double leftPos = columnCenter(startIdx);
+          final double flightSpanWidth = spanDays * totalColumnStride;
+          final double rightPos = leftPos + flightSpanWidth;
+          if (rightPos > maxStayRight) {
+            maxStayRight = rightPos;
+          }
+
+          // Mark covered night transitions for multi-day flight
+          for (int n = startIdx; n < endIdx && n < days.length - 1; n++) {
+            coveredNights.add(n);
+          }
+
+          int trackIndex = -1;
+          for (int t = 0; t < trackEndPositions.length; t++) {
+            if (trackEndPositions[t] <= leftPos + 0.5) {
+              trackIndex = t;
+              trackEndPositions[t] = rightPos;
+              break;
+            }
+          }
+          if (trackIndex == -1) {
+            trackIndex = trackEndPositions.length;
+            trackEndPositions.add(rightPos);
+          }
+
+          final flightStay = Stay(
+            id: 'stay_flight_${flight.id}',
+            tripId: trip.id,
+            type: StayType.overnightFlight,
+            name: '${flight.airline} ${flight.flightNumber}'.trim(),
+            address: '${flight.departureAirport} → ${flight.arrivalAirport}',
+            checkInDate: flight.departureTime,
+            checkOutDate: flight.arrivalTime,
+            overnightFlight: flight,
+            confirmationCode: flight.bookingRef,
+          );
+
+          stayWidgets.add(
+            Positioned(
+              left: leftPos,
+              top: trackIndex * 94.0,
+              child: StayHeaderBridgeWidget(
+                stay: flightStay,
+                cityName: flight.arrivalAirport.split(' ').first,
+                width: flightSpanWidth,
+                spanDays: spanDays,
+                startNightNumber: startIdx + 1,
+                palette: overnightFlightPalette,
+                onTap: () => _openFlightEdit(context, flight),
+              ),
+            ),
+          );
+        }
+
+        // 4. Add empty slots for any uncovered night transitions
         for (int i = 0; i < days.length - 1; i++) {
           if (!coveredNights.contains(i)) {
+            final checkInDate = days[i];
+            final checkOutDate = days[i + 1];
             stayWidgets.add(
               Positioned(
                 left: columnCenter(i),
                 top: 0,
-                child: const StayHeaderBridgeWidget(
+                child: StayHeaderBridgeWidget(
                   stay: null,
+                  cityName:
+                      trip.dayLocations[Trip.dateToKey(days[i])]?.lastOrNull,
                   width: totalColumnStride,
+                  startNightNumber: i + 1,
+                  onTap: canEdit
+                      ? () => _openAddStay(context,
+                          checkIn: checkInDate, checkOut: checkOutDate)
+                      : null,
                 ),
               ),
             );
           }
         }
 
-        // 3. Resolve Last Day Departure Transport Header Data
-        TransportHeaderData? departureData;
-        final explicitDepartureFlight =
-            allFlights.where((f) => f.isMainDeparture).firstOrNull;
-        final departureFlight = explicitDepartureFlight ??
-            allFlights.where((f) {
-              final d = DateTime(
-                  f.departureTime.year, f.departureTime.month, f.departureTime.day);
-              final t = DateTime(lastDay.year, lastDay.month, lastDay.day);
-              return d.isAtSameMomentAs(t) || d.isAfter(t);
-            }).firstOrNull;
-
-        if (departureFlight != null) {
-          departureData = TransportHeaderData.fromFlight(
-              departureFlight, TransportHeaderMode.departure);
-        } else {
-          final lastDayActivities = activitiesByDay[lastDay] ?? [];
-          final departureAct = lastDayActivities.where((a) =>
-              a.category == ActivityCategory.flight ||
-              a.category == ActivityCategory.transport ||
-              a.title.toLowerCase().contains('departure') ||
-              a.title.toLowerCase().contains('return') ||
-              a.title.toLowerCase().contains('flight') ||
-              a.title.toLowerCase().contains('airport')).firstOrNull;
-
-          if (departureAct != null) {
-            departureData = TransportHeaderData.fromActivity(
-                departureAct, TransportHeaderMode.departure);
-          } else {
-            departureData = TransportHeaderData.placeholder(
-              mode: TransportHeaderMode.departure,
-              destination: trip.destination,
-              type: TransportType.flight,
-            );
-          }
+        // 5. Add Special Finishing Stay Card (starts at vertical middle of last day, ends at 50% offset of width)
+        final double finishStayLeft = columnCenter(days.length - 1);
+        final double finishStayWidth = columnWidth / 2;
+        final double finishStayRight = finishStayLeft + finishStayWidth;
+        if (finishStayRight > maxStayRight) {
+          maxStayRight = finishStayRight;
         }
 
-        // Add Departure Header on Last Day (starts at last day center, ends 50% width to right)
-        final double departureLeft = columnCenter(days.length - 1);
-        final double departureRight = departureLeft + columnWidth;
-        if (departureRight > maxStayRight) {
-          maxStayRight = departureRight;
-        }
-
-        int depTrackIndex = -1;
+        int finishTrackIndex = -1;
         for (int t = 0; t < trackEndPositions.length; t++) {
-          if (trackEndPositions[t] <= departureLeft + 0.5) {
-            depTrackIndex = t;
-            trackEndPositions[t] = departureRight;
+          if (trackEndPositions[t] <= finishStayLeft + 0.5) {
+            finishTrackIndex = t;
+            trackEndPositions[t] = finishStayRight;
             break;
           }
         }
-        if (depTrackIndex == -1) {
-          depTrackIndex = trackEndPositions.length;
-          trackEndPositions.add(departureRight);
+        if (finishTrackIndex == -1) {
+          finishTrackIndex = trackEndPositions.length;
+          trackEndPositions.add(finishStayRight);
         }
 
         stayWidgets.add(
           Positioned(
-            left: departureLeft,
-            top: depTrackIndex * 94.0,
-            child: TransportHeaderBridgeWidget(
-              mode: TransportHeaderMode.departure,
-              data: departureData,
-              width: columnWidth,
-              onTap: () {
-                if (departureData?.flight != null) {
-                  _openFlightEdit(context, departureData!.flight!);
-                } else if (departureData?.activity != null) {
-                  widget.onActivityTap?.call(departureData!.activity!);
-                } else {
-                  widget.onOpenAddActivity?.call();
-                }
-              },
+            left: finishStayLeft,
+            top: finishTrackIndex * 94.0,
+            child: TripEndcapStayBridgeWidget(
+              type: TripEndcapType.finish,
+              locationName: trip.endLocation ?? 'Return',
+              width: finishStayWidth,
+              onTap:
+                  canEdit ? () => _openEditTripLocations(context, trip) : null,
             ),
           ),
         );
@@ -367,6 +453,9 @@ class _LogisticsViewState extends ConsumerState<LogisticsView> {
             canvasLeftOffset + (days.length * totalColumnStride) + 145.0 + 40.0;
         final double totalCanvasWidth =
             standardWidth > (maxStayRight + 20.0) ? standardWidth : (maxStayRight + 20.0);
+
+        final bool isWideScreen = constraints.maxWidth >= 1150;
+        final bool showDateRange = constraints.maxWidth >= 1380;
 
         return Column(
           children: [
@@ -397,48 +486,139 @@ class _LogisticsViewState extends ConsumerState<LogisticsView> {
                       color: AppColors.textSecondary,
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Text(
-                    DateFormatters.formatTripDateRange(
-                        trip.startDate, trip.endDate),
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textMuted,
-                      fontWeight: FontWeight.w500,
+                  if (showDateRange) ...[
+                    const SizedBox(width: 12),
+                    Text(
+                      DateFormatters.formatTripDateRange(
+                          trip.startDate, trip.endDate),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textMuted,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
-                  ),
+                  ],
                   const Spacer(),
-                  // Quick Horizontal Navigation Controls
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
+                  // View Switcher: Full View vs Compact View
+                  SegmentedButton<ItineraryViewMode>(
+                    showSelectedIcon: false,
+                    segments: [
+                      ButtonSegment(
+                        value: ItineraryViewMode.full,
+                        icon: const Icon(Icons.view_week_rounded, size: 15),
+                        label: isWideScreen
+                            ? const Text('Full View',
+                                style: TextStyle(
+                                    fontSize: 12, fontWeight: FontWeight.w600))
+                            : null,
+                        tooltip: 'Full Itinerary View',
+                      ),
+                      ButtonSegment(
+                        value: ItineraryViewMode.compact,
+                        icon: const Icon(Icons.table_rows_rounded, size: 15),
+                        label: isWideScreen
+                            ? const Text('Compact View',
+                                style: TextStyle(
+                                    fontSize: 12, fontWeight: FontWeight.w600))
+                            : null,
+                        tooltip: 'Compact Tabular View',
+                      ),
+                      ButtonSegment(
+                        value: ItineraryViewMode.map,
+                        icon: const Icon(Icons.map_rounded, size: 15),
+                        label: isWideScreen
+                            ? const Text('Map View',
+                                style: TextStyle(
+                                    fontSize: 12, fontWeight: FontWeight.w600))
+                            : null,
+                        tooltip: 'Interactive Map View',
+                      ),
+                    ],
+                    selected: {viewMode},
+                    onSelectionChanged: (newSelection) {
+                      if (newSelection.isNotEmpty) {
+                        ref
+                            .read(itineraryViewModeProvider.notifier)
+                            .setMode(newSelection.first);
+                      }
+                    },
+                    style: ButtonStyle(
                       visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      padding: WidgetStateProperty.all(
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      ),
                     ),
-                    icon: const Icon(Icons.today_rounded, size: 14),
-                    label: const Text('Day 1', style: TextStyle(fontSize: 12)),
-                    onPressed: _scrollToStart,
                   ),
-                  const SizedBox(width: 6),
-                  IconButton(
-                    icon: const Icon(Icons.chevron_left_rounded, size: 22),
-                    tooltip: 'Scroll Left (Previous Day)',
-                    visualDensity: VisualDensity.compact,
-                    onPressed: () => _scrollBy(-totalColumnStride),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.chevron_right_rounded, size: 22),
-                    tooltip: 'Scroll Right (Next Day)',
-                    visualDensity: VisualDensity.compact,
-                    onPressed: () => _scrollBy(totalColumnStride),
-                  ),
+                  if (viewMode == ItineraryViewMode.full) ...[
+                    const SizedBox(width: 8),
+                    // Quick Horizontal Navigation Controls
+                    if (isWideScreen)
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        icon: const Icon(Icons.today_rounded, size: 14),
+                        label: const Text('Day 1', style: TextStyle(fontSize: 12)),
+                        onPressed: _scrollToStart,
+                      )
+                    else
+                      IconButton(
+                        icon: const Icon(Icons.today_rounded, size: 20),
+                        tooltip: 'Scroll to Day 1',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: _scrollToStart,
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.chevron_left_rounded, size: 22),
+                      tooltip: 'Scroll Left (Previous Day)',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => _scrollBy(-totalColumnStride),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.chevron_right_rounded, size: 22),
+                      tooltip: 'Scroll Right (Next Day)',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => _scrollBy(totalColumnStride),
+                    ),
+                  ],
                 ],
               ),
             ),
 
-            // Main Horizontal Scroll Board with Draggable Scrollbar & Mouse Wheel Translation
-            Expanded(
-              child: ScrollConfiguration(
+            if (viewMode == ItineraryViewMode.compact)
+              Expanded(
+                child: CompactItineraryView(
+                  trip: trip,
+                  stays: stays,
+                  flights: flightsAsync.value ?? [],
+                  activitiesByDay: activitiesByDay,
+                  canEdit: canEdit,
+                  onStayTap: widget.onStayTap,
+                  onFlightTap: widget.onFlightTap,
+                  onActivityTap: widget.onActivityTap,
+                  onAddStayForDates: widget.onAddStayForDates,
+                ),
+              )
+            else if (viewMode == ItineraryViewMode.map)
+              Expanded(
+                child: MapItineraryView(
+                  trip: trip,
+                  stays: stays,
+                  flights: flightsAsync.value ?? [],
+                  activitiesByDay: activitiesByDay,
+                  canEdit: canEdit,
+                  onStayTap: widget.onStayTap,
+                  onFlightTap: widget.onFlightTap,
+                  onActivityTap: widget.onActivityTap,
+                ),
+              )
+            else
+              // Main Horizontal Scroll Board with Draggable Scrollbar & Mouse Wheel Translation
+              Expanded(
+                child: ScrollConfiguration(
                 behavior: const AppHorizontalScrollBehavior(),
                 child: Listener(
                   onPointerSignal: (pointerSignal) {
@@ -500,16 +680,32 @@ class _LogisticsViewState extends ConsumerState<LogisticsView> {
                                         );
                                         final effectiveLocations =
                                             customLocations ?? [defaultCountry];
+                                        final dayFlights =
+                                            (flightsAsync.value ?? []).where((f) {
+                                          final dep = DateTime(
+                                              f.departureTime.year,
+                                              f.departureTime.month,
+                                              f.departureTime.day);
+                                          final target = DateTime(
+                                              dayDate.year,
+                                              dayDate.month,
+                                              dayDate.day);
+                                          return dep == target;
+                                        }).toList();
 
                                         return DayColumnWidget(
                                           date: dayDate,
                                           dayNumber: i + 1,
                                           activities:
                                               activitiesByDay[dayDate] ?? [],
+                                          flights: dayFlights,
                                           locations: effectiveLocations,
                                           canEdit: canEdit,
-                                          onAddActivity: widget.onOpenAddActivity,
+                                          onAddActivity: (d) =>
+                                              widget.onOpenAddActivity?.call(d),
                                           onActivityTap: widget.onActivityTap,
+                                          onFlightTap: (f) =>
+                                              _openFlightEdit(context, f),
                                           onManageLocations: canEdit
                                               ? () {
                                                   showDialog(

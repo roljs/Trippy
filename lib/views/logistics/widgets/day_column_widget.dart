@@ -3,15 +3,18 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/date_formatters.dart';
 import '../../../models/models.dart';
 import 'activity_card_widget.dart';
+import 'flight_day_card_widget.dart';
 
 class DayColumnWidget extends StatelessWidget {
   final DateTime date;
   final int dayNumber;
   final List<Activity> activities;
+  final List<Flight> flights;
   final List<String> locations;
   final bool canEdit;
-  final VoidCallback? onAddActivity;
+  final void Function(DateTime date)? onAddActivity;
   final ValueChanged<Activity>? onActivityTap;
+  final ValueChanged<Flight>? onFlightTap;
   final VoidCallback? onManageLocations;
 
   const DayColumnWidget({
@@ -19,10 +22,12 @@ class DayColumnWidget extends StatelessWidget {
     required this.date,
     required this.dayNumber,
     required this.activities,
+    this.flights = const [],
     this.locations = const [],
     this.canEdit = true,
     this.onAddActivity,
     this.onActivityTap,
+    this.onFlightTap,
     this.onManageLocations,
   });
 
@@ -72,7 +77,9 @@ class DayColumnWidget extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
+                      Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 6,
                         children: [
                           Text(
                             'DAY $dayNumber',
@@ -85,8 +92,7 @@ class DayColumnWidget extends StatelessWidget {
                                   : AppColors.primary,
                             ),
                           ),
-                          if (isToday) ...[
-                            const SizedBox(width: 6),
+                          if (isToday)
                             Container(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 6, vertical: 1),
@@ -103,7 +109,6 @@ class DayColumnWidget extends StatelessWidget {
                                 ),
                               ),
                             ),
-                          ],
                         ],
                       ),
                       const SizedBox(height: 2),
@@ -146,14 +151,18 @@ class DayColumnWidget extends StatelessWidget {
                                         : AppColors.primary,
                                   ),
                                   const SizedBox(width: 2),
-                                  Text(
-                                    loc,
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w700,
-                                      color: isToday
-                                          ? Colors.white
-                                          : AppColors.primary,
+                                  Flexible(
+                                    child: Text(
+                                      loc,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                        color: isToday
+                                            ? Colors.white
+                                            : AppColors.primary,
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -209,7 +218,7 @@ class DayColumnWidget extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                // Activity count circle badge
+                // Activity & Flight count circle badge
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -220,7 +229,9 @@ class DayColumnWidget extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    '${activities.length} ${activities.length == 1 ? 'activity' : 'activities'}',
+                    flights.isEmpty
+                        ? '${activities.length} ${activities.length == 1 ? 'activity' : 'activities'}'
+                        : '${activities.length + flights.length} ${activities.length + flights.length == 1 ? 'item' : 'items'}',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
@@ -232,9 +243,9 @@ class DayColumnWidget extends StatelessWidget {
             ),
           ),
 
-          // Activities Content
+          // Schedule Items Content (Activities & Flights)
           Expanded(
-            child: activities.isEmpty
+            child: (activities.isEmpty && flights.isEmpty)
                 ? Center(
                     child: Padding(
                       padding: const EdgeInsets.all(20.0),
@@ -258,7 +269,7 @@ class DayColumnWidget extends StatelessWidget {
                           if (canEdit) ...[
                             const SizedBox(height: 12),
                             TextButton.icon(
-                              onPressed: onAddActivity,
+                              onPressed: () => onAddActivity?.call(date),
                               icon: const Icon(Icons.add, size: 16),
                               label: const Text('Add Activity'),
                               style: TextButton.styleFrom(
@@ -270,26 +281,42 @@ class DayColumnWidget extends StatelessWidget {
                       ),
                     ),
                   )
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 8),
-                    itemCount: activities.length,
-                    itemBuilder: (context, index) {
-                      final act = activities[index];
-                      return ActivityCardWidget(
-                        activity: act,
-                        onTap: () => onActivityTap?.call(act),
+                : Builder(
+                    builder: (context) {
+                      final scheduleItems = <_DayScheduleItem>[
+                        for (final a in activities) _DayScheduleItem.activity(a),
+                        for (final f in flights) _DayScheduleItem.flight(f),
+                      ]..sort((a, b) =>
+                          a.minutesFromMidnight.compareTo(b.minutesFromMidnight));
+
+                      return ListView.builder(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 8),
+                        itemCount: scheduleItems.length,
+                        itemBuilder: (context, index) {
+                          final item = scheduleItems[index];
+                          if (item.isFlight) {
+                            return FlightDayCardWidget(
+                              flight: item.flight!,
+                              onTap: () => onFlightTap?.call(item.flight!),
+                            );
+                          }
+                          return ActivityCardWidget(
+                            activity: item.activity!,
+                            onTap: () => onActivityTap?.call(item.activity!),
+                          );
+                        },
                       );
                     },
                   ),
           ),
 
           // Bottom Quick Add Button
-          if (canEdit && activities.isNotEmpty)
+          if (canEdit && (activities.isNotEmpty || flights.isNotEmpty))
             Padding(
               padding: const EdgeInsets.all(10.0),
               child: OutlinedButton.icon(
-                onPressed: onAddActivity,
+                onPressed: () => onAddActivity?.call(date),
                 icon: const Icon(Icons.add_rounded, size: 16),
                 label: const Text(
                   'Add Activity',
@@ -312,5 +339,36 @@ class DayColumnWidget extends StatelessWidget {
   bool _isToday(DateTime d) {
     final now = DateTime.now();
     return d.year == now.year && d.month == now.month && d.day == now.day;
+  }
+}
+
+class _DayScheduleItem {
+  final Activity? activity;
+  final Flight? flight;
+  final int minutesFromMidnight;
+
+  bool get isFlight => flight != null;
+  bool get isActivity => activity != null;
+
+  _DayScheduleItem.activity(Activity a)
+      : activity = a,
+        flight = null,
+        minutesFromMidnight = _parseMinutes(a.startTime);
+
+  _DayScheduleItem.flight(Flight f)
+      : flight = f,
+        activity = null,
+        minutesFromMidnight = f.departureTime.hour * 60 + f.departureTime.minute;
+
+  static int _parseMinutes(String timeStr) {
+    try {
+      final parts = timeStr.split(':');
+      if (parts.length >= 2) {
+        final h = int.parse(parts[0].trim());
+        final m = int.parse(parts[1].trim());
+        return h * 60 + m;
+      }
+    } catch (_) {}
+    return 12 * 60;
   }
 }

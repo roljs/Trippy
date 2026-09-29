@@ -8,6 +8,7 @@ import '../../models/models.dart';
 import '../../services/export_import/file_upload_helper.dart';
 import '../../services/export_import/trip_export_service.dart';
 import '../../state/trip_providers.dart';
+import '../../data/samples/thailandia_sample_trip.dart';
 import '../logistics/widgets/transport_header_bridge_widget.dart';
 
 class TripDashboardScreen extends ConsumerWidget {
@@ -43,6 +44,58 @@ class TripDashboardScreen extends ConsumerWidget {
       context: context,
       builder: (ctx) => _ImportTripDialog(ref: ref),
     );
+  }
+
+  void _confirmDeleteTrip(BuildContext context, WidgetRef ref, Trip trip) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Trip'),
+        content: Text(
+          'Are you sure you want to delete "${trip.title}"?\n\nThis will permanently remove the trip, including all its stays, flights, and activities. This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true && context.mounted) {
+      final repo = ref.read(tripRepositoryProvider);
+      final userId = ref.read(currentUserIdProvider);
+      final activeTripId = ref.read(activeTripIdProvider);
+
+      await repo.deleteTrip(trip.id);
+
+      // If deleted trip was the active trip, switch active trip to another remaining trip or null
+      if (activeTripId == trip.id) {
+        final remaining = await repo.getTripsForUser(userId);
+        if (remaining.isNotEmpty) {
+          ref.read(activeTripIdProvider.notifier).selectTrip(remaining.first.id);
+        } else {
+          ref.read(activeTripIdProvider.notifier).selectTrip(null);
+        }
+      }
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Trip "${trip.title}" was deleted.'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      }
+    }
   }
 
   void _exportSingleTrip(BuildContext context, WidgetRef ref, Trip trip) async {
@@ -91,6 +144,22 @@ class TripDashboardScreen extends ConsumerWidget {
     }
   }
 
+  void _loadThailandSample(BuildContext context, WidgetRef ref) async {
+    final repo = ref.read(tripRepositoryProvider);
+    final userId = ref.read(currentUserIdProvider);
+    final result = await TripExportService.importFromJson(repo, thailandiaSampleJson, userId);
+    ref.read(activeTripIdProvider.notifier).selectTrip('trip_thailandia_2026');
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.message),
+          backgroundColor: const Color(0xFF15803D),
+        ),
+      );
+      onTripSelected?.call();
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tripsAsync = ref.watch(userTripsProvider);
@@ -114,9 +183,22 @@ class TripDashboardScreen extends ConsumerWidget {
                 _exportAllTrips(context, ref);
               } else if (value == 'import') {
                 _showImportDialog(context, ref);
+              } else if (value == 'load_thailand_sample') {
+                _loadThailandSample(context, ref);
               }
             },
             itemBuilder: (ctx) => [
+              const PopupMenuItem(
+                value: 'load_thailand_sample',
+                child: Row(
+                  children: [
+                    Icon(Icons.auto_awesome_rounded, size: 18, color: AppColors.primary),
+                    SizedBox(width: 8),
+                    Text('Load Thailand 2026 Sample'),
+                  ],
+                ),
+              ),
+              const PopupMenuDivider(),
               const PopupMenuItem(
                 value: 'export_all',
                 child: Row(
@@ -381,6 +463,14 @@ class TripDashboardScreen extends ConsumerWidget {
                               onPressed: () =>
                                   _exportSingleTrip(context, ref, trip),
                             ),
+                            if (role.isOwner)
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline,
+                                    size: 20, color: Colors.red),
+                                tooltip: 'Delete Trip',
+                                onPressed: () =>
+                                    _confirmDeleteTrip(context, ref, trip),
+                              ),
                           ],
                         ),
                       ],
@@ -410,11 +500,22 @@ class _CreateTripDialog extends StatefulWidget {
 class _CreateTripDialogState extends State<_CreateTripDialog> {
   final _titleController = TextEditingController();
   final _destinationController = TextEditingController();
+  final _startLocationController = TextEditingController();
+  final _endLocationController = TextEditingController();
   DateTime _startDate = DateTime.now().add(const Duration(days: 7));
   DateTime _endDate = DateTime.now().add(const Duration(days: 14));
   MemberRole _defaultRole = MemberRole.editor;
   TransportType _arrivalMethod = TransportType.flight;
   TransportType _departureMethod = TransportType.flight;
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _destinationController.dispose();
+    _startLocationController.dispose();
+    _endLocationController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -438,6 +539,24 @@ class _CreateTripDialogState extends State<_CreateTripDialog> {
               decoration: const InputDecoration(
                 labelText: 'Destination',
                 hintText: 'e.g. Rome & Florence, Italy',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _startLocationController,
+              decoration: const InputDecoration(
+                labelText: 'Starting Location',
+                hintText: 'e.g. San Francisco or Origin City',
+                helperText: 'Where does your journey begin?',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _endLocationController,
+              decoration: const InputDecoration(
+                labelText: 'Finishing Location',
+                hintText: 'e.g. San Francisco or Return City',
+                helperText: 'Where does your journey end?',
               ),
             ),
             const SizedBox(height: 16),
@@ -609,6 +728,13 @@ class _CreateTripDialogState extends State<_CreateTripDialog> {
                 ? _titleController.text.trim()
                 : _destinationController.text.trim();
 
+            final startLoc = _startLocationController.text.trim().isNotEmpty
+                ? _startLocationController.text.trim()
+                : null;
+            final endLoc = _endLocationController.text.trim().isNotEmpty
+                ? _endLocationController.text.trim()
+                : null;
+
             final newTrip = Trip(
               id: 'trip_${DateTime.now().millisecondsSinceEpoch}',
               title: _titleController.text.trim(),
@@ -619,6 +745,8 @@ class _CreateTripDialogState extends State<_CreateTripDialog> {
               inviteCode: CodeGenerator.generateInviteCode(),
               defaultInviteRole: _defaultRole,
               members: {currentUserId: MemberRole.owner},
+              startLocation: startLoc,
+              endLocation: endLoc,
               createdAt: DateTime.now(),
               updatedAt: DateTime.now(),
             );
@@ -1134,18 +1262,31 @@ class _ImportTripDialogState extends State<_ImportTripDialog> {
                 style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
               ),
               const SizedBox(height: 14),
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
                 children: [
                   ElevatedButton.icon(
                     onPressed: _isLoading ? null : _pickFile,
                     icon: const Icon(Icons.folder_open_rounded, size: 16),
                     label: const Text('Choose .json File'),
                   ),
-                  const SizedBox(width: 8),
                   OutlinedButton.icon(
                     onPressed: _isLoading ? null : _pasteFromClipboard,
                     icon: const Icon(Icons.paste_rounded, size: 16),
                     label: const Text('Paste from Clipboard'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _isLoading
+                        ? null
+                        : () {
+                            setState(() {
+                              _jsonController.text = thailandiaSampleJson;
+                              _error = null;
+                            });
+                          },
+                    icon: const Icon(Icons.auto_awesome_rounded, size: 16),
+                    label: const Text('Load Thailand 2026 Sample'),
                   ),
                 ],
               ),

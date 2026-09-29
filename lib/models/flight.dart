@@ -16,6 +16,7 @@ class Flight {
   final String? seat;
   final String? bookingRef;
   final String? notes;
+  final List<String> linkedActivityIds;
 
   const Flight({
     required this.id,
@@ -35,6 +36,7 @@ class Flight {
     this.seat,
     this.bookingRef,
     this.notes,
+    this.linkedActivityIds = const [],
   }) : isNightStay = (isMainArrival || isMainDeparture) ? false : isNightStay;
 
   /// True if the flight spans into the next calendar day
@@ -66,6 +68,7 @@ class Flight {
     String? seat,
     String? bookingRef,
     String? notes,
+    List<String>? linkedActivityIds,
   }) {
     final bool explicitNightStay = isNightStay == true;
     final bool newArrival = explicitNightStay ? false : (isMainArrival ?? this.isMainArrival);
@@ -90,6 +93,7 @@ class Flight {
       seat: seat ?? this.seat,
       bookingRef: bookingRef ?? this.bookingRef,
       notes: notes ?? this.notes,
+      linkedActivityIds: linkedActivityIds ?? this.linkedActivityIds,
     );
   }
 
@@ -112,6 +116,7 @@ class Flight {
       'seat': seat,
       'bookingRef': bookingRef,
       'notes': notes,
+      'linkedActivityIds': linkedActivityIds,
     };
   }
 
@@ -134,6 +139,10 @@ class Flight {
       seat: map['seat'] as String?,
       bookingRef: map['bookingRef'] as String?,
       notes: map['notes'] as String?,
+      linkedActivityIds: (map['linkedActivityIds'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
     );
   }
 }

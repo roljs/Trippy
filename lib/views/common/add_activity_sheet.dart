@@ -4,11 +4,26 @@ import '../../core/theme/app_colors.dart';
 import '../../core/utils/date_formatters.dart';
 import '../../models/models.dart';
 import '../../state/trip_providers.dart';
+import 'add_flight_sheet.dart';
+import 'add_stay_sheet.dart';
 
 class AddActivitySheet extends ConsumerStatefulWidget {
   final Activity? activityToEdit;
+  final DateTime? initialDate;
+  final String? initialTitle;
+  final ActivityCategory? initialCategory;
+  final TimeOfDay? initialStartTime;
+  final TimeOfDay? initialEndTime;
 
-  const AddActivitySheet({super.key, this.activityToEdit});
+  const AddActivitySheet({
+    super.key,
+    this.activityToEdit,
+    this.initialDate,
+    this.initialTitle,
+    this.initialCategory,
+    this.initialStartTime,
+    this.initialEndTime,
+  });
 
   @override
   ConsumerState<AddActivitySheet> createState() => _AddActivitySheetState();
@@ -25,6 +40,8 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
   late DateTime _selectedDate;
   TimeOfDay _startTime = const TimeOfDay(hour: 10, minute: 0);
   TimeOfDay? _endTime;
+  String? _selectedStayId;
+  String? _selectedFlightId;
 
   @override
   void initState() {
@@ -38,6 +55,8 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
       _category = edit.category;
       _bookingStatus = edit.bookingStatus;
       _selectedDate = edit.date;
+      _selectedStayId = edit.stayId;
+      _selectedFlightId = edit.flightId;
       final startParts = edit.startTime.split(':');
       if (startParts.length >= 2) {
         _startTime = TimeOfDay(
@@ -55,10 +74,17 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
         }
       }
     } else {
-      _category = ActivityCategory.attraction;
+      _titleController.text = widget.initialTitle ?? '';
+      _category = widget.initialCategory ?? ActivityCategory.attraction;
       _bookingStatus = BookingStatus.planned;
       final activeTrip = ref.read(activeTripProvider);
-      _selectedDate = activeTrip?.startDate ?? DateTime.now();
+      _selectedDate = widget.initialDate ?? activeTrip?.startDate ?? DateTime.now();
+      if (widget.initialStartTime != null) {
+        _startTime = widget.initialStartTime!;
+      }
+      if (widget.initialEndTime != null) {
+        _endTime = widget.initialEndTime;
+      }
     }
   }
 
@@ -66,6 +92,77 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
     final h = tod.hour.toString().padLeft(2, '0');
     final m = tod.minute.toString().padLeft(2, '0');
     return '$h:$m';
+  }
+
+  TimeOfDay _parseTimeOfDay(String? timeStr, {required int defaultHour, int defaultMinute = 0}) {
+    if (timeStr == null || timeStr.isEmpty) {
+      return TimeOfDay(hour: defaultHour, minute: defaultMinute);
+    }
+    final parts = timeStr.split(':');
+    return TimeOfDay(
+      hour: int.tryParse(parts[0]) ?? defaultHour,
+      minute: parts.length > 1 ? int.tryParse(parts[1]) ?? defaultMinute : defaultMinute,
+    );
+  }
+
+  void _applyStayCheckIn(Stay stay) {
+    setState(() {
+      _titleController.text = 'Check-in: ${stay.name}';
+      _selectedDate = stay.checkInDate;
+      _startTime = _parseTimeOfDay(stay.checkInTime, defaultHour: 15);
+      _locationController.text = stay.address ?? stay.name;
+      _confirmationController.text = stay.confirmationCode ?? '';
+      if (stay.notes != null && stay.notes!.isNotEmpty) {
+        _notesController.text = stay.notes!;
+      }
+      _bookingStatus = BookingStatus.booked;
+    });
+  }
+
+  void _applyStayCheckOut(Stay stay) {
+    setState(() {
+      _titleController.text = 'Check-out: ${stay.name}';
+      _selectedDate = stay.checkOutDate;
+      _startTime = _parseTimeOfDay(stay.checkOutTime, defaultHour: 11);
+      _locationController.text = stay.address ?? stay.name;
+      _confirmationController.text = stay.confirmationCode ?? '';
+      if (stay.notes != null && stay.notes!.isNotEmpty) {
+        _notesController.text = stay.notes!;
+      }
+      _bookingStatus = BookingStatus.booked;
+    });
+  }
+
+  void _applyFlightDepartureTransfer(Flight flight) {
+    setState(() {
+      final depAirport = flight.departureAirport;
+      final depName = depAirport.contains('(')
+          ? depAirport.substring(depAirport.indexOf('(') + 1, depAirport.indexOf(')'))
+          : depAirport.split(' ').first;
+      _titleController.text = 'Transport: Hotel to $depName Airport';
+      final depTransferTime = flight.departureTime.subtract(const Duration(hours: 2));
+      _selectedDate = DateTime(depTransferTime.year, depTransferTime.month, depTransferTime.day);
+      _startTime = TimeOfDay(hour: depTransferTime.hour, minute: depTransferTime.minute);
+      _locationController.text = '$depAirport Airport';
+      _notesController.text = 'Ground transfer to airport for flight ${flight.airline} ${flight.flightNumber}';
+      _bookingStatus = BookingStatus.planned;
+    });
+  }
+
+  void _applyFlightArrivalTransfer(Flight flight) {
+    setState(() {
+      final arrAirport = flight.arrivalAirport;
+      final arrName = arrAirport.contains('(')
+          ? arrAirport.substring(arrAirport.indexOf('(') + 1, arrAirport.indexOf(')'))
+          : arrAirport.split(' ').first;
+      _titleController.text = 'Transport: $arrName Airport to Hotel';
+      final arrTransferTime = flight.arrivalTime.add(const Duration(minutes: 45));
+      _selectedDate = DateTime(arrTransferTime.year, arrTransferTime.month, arrTransferTime.day);
+      _startTime = TimeOfDay(hour: arrTransferTime.hour, minute: arrTransferTime.minute);
+      _locationController.text = '$arrAirport Airport';
+      _notesController.text = 'Ground transfer from airport to hotel after flight ${flight.airline} ${flight.flightNumber}';
+      _bookingStatus = BookingStatus.planned;
+    });
   }
 
   @override
@@ -79,6 +176,30 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
     }
 
     final tripDays = activeTrip.daysList;
+    final staysAsync = ref.watch(activeTripStaysProvider);
+    final availableStays = staysAsync.value?.where((s) => s.type != StayType.overnightFlight).toList() ?? [];
+
+    final flightsAsync = ref.watch(activeTripFlightsProvider);
+    final availableFlights = flightsAsync.value ?? [];
+
+    Stay? currentSelectedStay;
+    if (_selectedStayId != null) {
+      currentSelectedStay = availableStays.where((s) => s.id == _selectedStayId).firstOrNull;
+    }
+
+    Flight? currentSelectedFlight;
+    if (_selectedFlightId != null) {
+      currentSelectedFlight = availableFlights.where((f) => f.id == _selectedFlightId).firstOrNull;
+    }
+
+    // Normalized date check for trip day dropdown
+    DateTime matchedDay = tripDays.first;
+    for (final d in tripDays) {
+      if (d.year == _selectedDate.year && d.month == _selectedDate.month && d.day == _selectedDate.day) {
+        matchedDay = d;
+        break;
+      }
+    }
 
     return Container(
       padding: EdgeInsets.only(
@@ -140,12 +261,356 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
                   label: Text(cat.displayName),
                   selected: _category == cat,
                   onSelected: (val) {
-                    if (val) setState(() => _category = cat);
+                    if (val) {
+                      setState(() {
+                        _category = cat;
+                        if (cat == ActivityCategory.stay && _selectedStayId == null && availableStays.isNotEmpty) {
+                          _selectedStayId = availableStays.first.id;
+                          _applyStayCheckIn(availableStays.first);
+                        }
+                      });
+                    }
                   },
                 );
               }).toList(),
             ),
             const SizedBox(height: 14),
+
+            // Stay linking section if category is Stay
+            if (_category == ActivityCategory.stay) ...[
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppColors.stayContainer.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.stay.withValues(alpha: 0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.hotel_rounded, size: 18, color: AppColors.stay),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Link to Hotel / Stay',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.stay,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    if (availableStays.isEmpty)
+                      const Text(
+                        'No stays created yet. You can still enter hotel details below.',
+                        style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                      )
+                    else ...[
+                      DropdownButtonFormField<String?>(
+                        key: ValueKey(_selectedStayId),
+                        initialValue: _selectedStayId,
+                        decoration: const InputDecoration(
+                          labelText: 'Select Stay',
+                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          filled: true,
+                          fillColor: Colors.white,
+                        ),
+                        items: [
+                          const DropdownMenuItem<String?>(
+                            value: null,
+                            child: Text('None (Unlinked)', style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
+                          ),
+                          ...availableStays.map((s) {
+                            return DropdownMenuItem<String?>(
+                              value: s.id,
+                              child: Text(
+                                '${s.name} (${DateFormatters.shortDate.format(s.checkInDate)} - ${DateFormatters.shortDate.format(s.checkOutDate)})',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            );
+                          }),
+                        ],
+                        onChanged: (stayId) {
+                          setState(() {
+                            _selectedStayId = stayId;
+                            if (stayId != null) {
+                              final stay = availableStays.firstWhere((s) => s.id == stayId);
+                              _applyStayCheckIn(stay);
+                            }
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      if (currentSelectedStay != null) ...[
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () => _applyStayCheckIn(currentSelectedStay!),
+                                icon: const Icon(Icons.login_rounded, size: 14),
+                                label: const Text('Quick: Check-in', style: TextStyle(fontSize: 12)),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(vertical: 6),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () => _applyStayCheckOut(currentSelectedStay!),
+                                icon: const Icon(Icons.logout_rounded, size: 14),
+                                label: const Text('Quick: Check-out', style: TextStyle(fontSize: 12)),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(vertical: 6),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey.shade200),
+                          ),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: () {
+                              Navigator.pop(context);
+                              showModalBottomSheet(
+                                context: context,
+                                isScrollControlled: true,
+                                backgroundColor: Colors.transparent,
+                                builder: (ctx) => AddStaySheet(stayToEdit: currentSelectedStay),
+                              );
+                            },
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              currentSelectedStay.name,
+                                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                                            ),
+                                          ),
+                                          const Text(
+                                            'View Stay',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w700,
+                                              color: AppColors.stay,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          const Icon(Icons.arrow_forward_ios_rounded, size: 10, color: AppColors.stay),
+                                        ],
+                                      ),
+                                      if (currentSelectedStay.address != null) ...[
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          currentSelectedStay.address!,
+                                          style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                                        ),
+                                      ],
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        children: [
+                                          Text(
+                                            'Check-in: ${DateFormatters.shortDate.format(currentSelectedStay.checkInDate)} at ${currentSelectedStay.checkInTime ?? "15:00"}',
+                                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            '•  Out: ${DateFormatters.shortDate.format(currentSelectedStay.checkOutDate)} at ${currentSelectedStay.checkOutTime ?? "11:00"}',
+                                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+            ],
+
+            // 2. Flight Linking Card (Available when Transport category is selected or linking to a flight)
+            if (_category == ActivityCategory.transport && availableFlights.isNotEmpty) ...[
+              Container(
+                margin: const EdgeInsets.only(bottom: 14),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.transportContainer.withValues(alpha: 0.25),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.transport.withValues(alpha: 0.4)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.flight_takeoff_rounded, size: 16, color: AppColors.transport),
+                        SizedBox(width: 6),
+                        Text(
+                          'Link to Flight (Airport Ground Transfer)',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.transport,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String?>(
+                      key: ValueKey(_selectedFlightId),
+                      initialValue: _selectedFlightId,
+                      decoration: const InputDecoration(
+                        labelText: 'Select Flight',
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        filled: true,
+                        fillColor: Colors.white,
+                      ),
+                      items: [
+                        const DropdownMenuItem<String?>(
+                          value: null,
+                          child: Text('None (Unlinked)', style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
+                        ),
+                        ...availableFlights.map((f) {
+                          return DropdownMenuItem<String?>(
+                            value: f.id,
+                            child: Text(
+                              '${f.flightNumber} (${f.airline}) • ${f.departureAirport.split(' ').first} -> ${f.arrivalAirport.split(' ').first}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          );
+                        }),
+                      ],
+                      onChanged: (flightId) {
+                        setState(() {
+                          _selectedFlightId = flightId;
+                          if (flightId != null) {
+                            final f = availableFlights.firstWhere((x) => x.id == flightId);
+                            _applyFlightDepartureTransfer(f);
+                          }
+                        });
+                      },
+                    ),
+                    if (currentSelectedFlight != null) ...[
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _applyFlightDepartureTransfer(currentSelectedFlight!),
+                              icon: const Icon(Icons.flight_takeoff_rounded, size: 14),
+                              label: const Text('Quick: To Airport', style: TextStyle(fontSize: 12)),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 6),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _applyFlightArrivalTransfer(currentSelectedFlight!),
+                              icon: const Icon(Icons.flight_land_rounded, size: 14),
+                              label: const Text('Quick: From Airport', style: TextStyle(fontSize: 12)),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 6),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey.shade200),
+                          ),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: () {
+                              Navigator.pop(context);
+                              showModalBottomSheet(
+                                context: context,
+                                isScrollControlled: true,
+                                backgroundColor: Colors.transparent,
+                                builder: (ctx) => AddFlightSheet(flightToEdit: currentSelectedFlight),
+                              );
+                            },
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              '${currentSelectedFlight.flightNumber} (${currentSelectedFlight.airline})',
+                                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                                            ),
+                                          ),
+                                          const Text(
+                                            'View Flight',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w700,
+                                              color: AppColors.flight,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          const Icon(Icons.arrow_forward_ios_rounded, size: 10, color: AppColors.flight),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        '${currentSelectedFlight.departureAirport} → ${currentSelectedFlight.arrivalAirport}',
+                                        style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Departs: ${DateFormatters.shortDate.format(currentSelectedFlight.departureTime)} ${DateFormatters.time12.format(currentSelectedFlight.departureTime)}',
+                                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
 
             // Date selector
             const Text(
@@ -154,12 +619,10 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
             ),
             const SizedBox(height: 6),
             DropdownButtonFormField<DateTime>(
-              initialValue: tripDays.contains(_selectedDate)
-                  ? _selectedDate
-                  : tripDays.first,
+              key: ValueKey(matchedDay),
+              initialValue: matchedDay,
               decoration: const InputDecoration(
-                contentPadding:
-                    EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               ),
               items: tripDays.map((d) {
                 final dayIdx = tripDays.indexOf(d) + 1;
@@ -338,12 +801,58 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
                         notes: _notesController.text.trim().isEmpty
                             ? null
                             : _notesController.text.trim(),
+                        stayId: _category == ActivityCategory.stay ? _selectedStayId : null,
+                        flightId: _category == ActivityCategory.transport ? _selectedFlightId : null,
                       );
 
                       if (isEditing) {
                         await repo.updateActivity(activity);
                       } else {
                         await repo.addActivity(activity);
+                      }
+
+                      // Manage reciprocal link on Flight side
+                      final targetFlightId = _category == ActivityCategory.transport ? _selectedFlightId : null;
+                      final prevFlightId = widget.activityToEdit?.flightId;
+
+                      if (targetFlightId != null) {
+                        final flt = availableFlights.where((f) => f.id == targetFlightId).firstOrNull;
+                        if (flt != null && !flt.linkedActivityIds.contains(activity.id)) {
+                          await repo.updateFlight(flt.copyWith(
+                            linkedActivityIds: [...flt.linkedActivityIds, activity.id],
+                          ));
+                        }
+                      }
+
+                      if (prevFlightId != null && prevFlightId != targetFlightId) {
+                        final oldFlt = availableFlights.where((f) => f.id == prevFlightId).firstOrNull;
+                        if (oldFlt != null && oldFlt.linkedActivityIds.contains(activity.id)) {
+                          await repo.updateFlight(oldFlt.copyWith(
+                            linkedActivityIds: oldFlt.linkedActivityIds.where((id) => id != activity.id).toList(),
+                          ));
+                        }
+                      }
+
+                      // Manage reciprocal link on Stay side
+                      final targetStayId = _category == ActivityCategory.stay ? _selectedStayId : null;
+                      final prevStayId = widget.activityToEdit?.stayId;
+
+                      if (targetStayId != null) {
+                        final sty = availableStays.where((s) => s.id == targetStayId).firstOrNull;
+                        if (sty != null && !sty.linkedActivityIds.contains(activity.id)) {
+                          await repo.updateStay(sty.copyWith(
+                            linkedActivityIds: [...sty.linkedActivityIds, activity.id],
+                          ));
+                        }
+                      }
+
+                      if (prevStayId != null && prevStayId != targetStayId) {
+                        final oldSty = availableStays.where((s) => s.id == prevStayId).firstOrNull;
+                        if (oldSty != null && oldSty.linkedActivityIds.contains(activity.id)) {
+                          await repo.updateStay(oldSty.copyWith(
+                            linkedActivityIds: oldSty.linkedActivityIds.where((id) => id != activity.id).toList(),
+                          ));
+                        }
                       }
 
                       if (context.mounted) Navigator.pop(context);

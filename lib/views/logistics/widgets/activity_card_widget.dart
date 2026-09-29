@@ -19,6 +19,8 @@ class ActivityCardWidget extends StatelessWidget {
     switch (cat) {
       case ActivityCategory.flight:
         return AppColors.flight;
+      case ActivityCategory.stay:
+        return AppColors.stay;
       case ActivityCategory.transport:
         return AppColors.transport;
       case ActivityCategory.dining:
@@ -35,6 +37,8 @@ class ActivityCardWidget extends StatelessWidget {
     switch (cat) {
       case ActivityCategory.flight:
         return AppColors.flightContainer;
+      case ActivityCategory.stay:
+        return AppColors.stayContainer;
       case ActivityCategory.transport:
         return AppColors.transportContainer;
       case ActivityCategory.dining:
@@ -51,6 +55,8 @@ class ActivityCardWidget extends StatelessWidget {
     switch (cat) {
       case ActivityCategory.flight:
         return Icons.flight_takeoff_rounded;
+      case ActivityCategory.stay:
+        return Icons.hotel_rounded;
       case ActivityCategory.transport:
         return Icons.directions_subway_rounded;
       case ActivityCategory.dining:
