@@ -1,4 +1,4 @@
-package com.trippy.trippy
+package com.roljs.trippy
 
 import io.flutter.embedding.android.FlutterActivity
 

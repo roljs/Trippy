@@ -139,13 +139,44 @@ class TripMapRoute {
 class TripMapHelper {
   // Built-in geographic coordinate database of worldwide travel cities and airport hubs
   static const Map<String, GeoPoint> _knownCoordinates = {
-    // North America
+    // North America & Greater Seattle
     'seattle': GeoPoint(47.6062, -122.3321),
     'sea': GeoPoint(47.4502, -122.3088),
+    'sea airport': GeoPoint(47.4502, -122.3088),
+    'seatac': GeoPoint(47.4436, -122.2961),
+    'seattle-tacoma': GeoPoint(47.4502, -122.3088),
+    'seattle-tacoma international airport': GeoPoint(47.4502, -122.3088),
+    'delta sky lounge': GeoPoint(47.4502, -122.3088),
+    'bellevue': GeoPoint(47.6101, -122.2015),
+    '3942 west lake sammish': GeoPoint(47.5747, -122.1093),
+    '3942 west lake sammamish': GeoPoint(47.5747, -122.1093),
+    'west lake sammish': GeoPoint(47.5747, -122.1093),
+    'west lake sammamish': GeoPoint(47.5747, -122.1093),
+    'lake sammamish': GeoPoint(47.5747, -122.1093),
+    'lake sammish': GeoPoint(47.5747, -122.1093),
+    'sammamish': GeoPoint(47.6163, -122.0356),
+    'sammish': GeoPoint(47.5747, -122.1093),
+    'redmond': GeoPoint(47.6740, -122.1215),
+    'kirkland': GeoPoint(47.6769, -122.2060),
+    'renton': GeoPoint(47.4829, -122.2171),
+    'tacoma': GeoPoint(47.2529, -122.4443),
+    'everett': GeoPoint(47.9790, -122.2021),
+    'olympia': GeoPoint(47.0379, -122.9007),
+    'spokane': GeoPoint(47.6588, -117.4260),
+    'portland': GeoPoint(45.5152, -122.6784),
+    'pdx': GeoPoint(45.5898, -122.5951),
+    'washington park arboretum': GeoPoint(47.6298, -122.2947),
+    'seattle arboretum': GeoPoint(47.6298, -122.2947),
     'san francisco': GeoPoint(37.7749, -122.4194),
     'sfo': GeoPoint(37.6213, -122.3790),
+    'san jose': GeoPoint(37.3382, -121.8863),
+    'sjc': GeoPoint(37.3639, -121.9289),
+    'oakland': GeoPoint(37.8044, -122.2712),
+    'oak': GeoPoint(37.7214, -122.2208),
     'los angeles': GeoPoint(34.0522, -118.2437),
     'lax': GeoPoint(33.9416, -118.4085),
+    'san diego': GeoPoint(32.7157, -117.1611),
+    'san': GeoPoint(32.7338, -117.1933),
     'new york': GeoPoint(40.7128, -74.0060),
     'jfk': GeoPoint(40.6413, -73.7781),
     'ewr': GeoPoint(40.6895, -74.1745),
@@ -155,6 +186,12 @@ class TripMapHelper {
     'hnl': GeoPoint(21.3245, -157.9251),
     'las vegas': GeoPoint(36.1699, -115.1398),
     'las': GeoPoint(36.0840, -115.1537),
+    'denver': GeoPoint(39.7392, -104.9903),
+    'den': GeoPoint(39.8561, -104.6737),
+    'boston': GeoPoint(42.3601, -71.0589),
+    'bos': GeoPoint(42.3656, -71.0096),
+    'miami': GeoPoint(25.7617, -80.1918),
+    'mia': GeoPoint(25.7959, -80.2870),
     'vancouver': GeoPoint(49.2827, -123.1207),
     'yvr': GeoPoint(49.1967, -123.1815),
     'toronto': GeoPoint(43.6532, -79.3832),
@@ -164,6 +201,20 @@ class TripMapHelper {
 
     // Japan & East Asia
     'tokyo': GeoPoint(35.6762, 139.6503),
+    'asakusa': GeoPoint(35.7118, 139.7967),
+    'asakusa station': GeoPoint(35.7106, 139.7975),
+    'tawaramachi': GeoPoint(35.7099, 139.7909),
+    'apa hotel asakusa': GeoPoint(35.7100, 139.7915),
+    'sensoji': GeoPoint(35.7148, 139.7967),
+    'senso-ji': GeoPoint(35.7148, 139.7967),
+    'shinjuku': GeoPoint(35.6938, 139.7034),
+    'shibuya': GeoPoint(35.6580, 139.7016),
+    'ginza': GeoPoint(35.6719, 139.7648),
+    'ueno': GeoPoint(35.7141, 139.7741),
+    'akihabara': GeoPoint(35.6983, 139.7731),
+    'roppongi': GeoPoint(35.6628, 139.7314),
+    'koduchi no yado': GeoPoint(36.7580, 139.5970),
+    'tsurukamedaikichi': GeoPoint(36.7580, 139.5970),
     'hnd': GeoPoint(35.5494, 139.7798),
     'nrt': GeoPoint(35.7720, 140.3929),
     'nikko': GeoPoint(36.7551, 139.5989),
@@ -215,18 +266,29 @@ class TripMapHelper {
     'phnom penh': GeoPoint(11.5564, 104.9282),
     'pnh': GeoPoint(11.5466, 104.8441),
     'bangkok': GeoPoint(13.7563, 100.5018),
+    'grand palace': GeoPoint(13.7500, 100.4914),
+    'wat arun': GeoPoint(13.7437, 100.4888),
+    'wat pho': GeoPoint(13.7466, 100.4933),
+    'sukhumvit': GeoPoint(13.7380, 100.5604),
+    'silom': GeoPoint(13.7258, 100.5284),
+    'siam': GeoPoint(13.7456, 100.5342),
+    'chatuchak': GeoPoint(13.7999, 100.5505),
     'bkk': GeoPoint(13.6900, 100.7501),
     'dmk': GeoPoint(13.9126, 100.6067),
     'ayutthaya': GeoPoint(14.3532, 100.5684),
     'chiang mai': GeoPoint(18.7883, 98.9853),
     'cnx': GeoPoint(18.7668, 98.9626),
     'phuket': GeoPoint(7.8804, 98.3923),
+    'patong': GeoPoint(7.8961, 98.2974),
+    'kata': GeoPoint(7.8228, 98.2980),
     'hkt': GeoPoint(8.1132, 98.3169),
     'koh samui': GeoPoint(9.5120, 100.0136),
     'usm': GeoPoint(9.5478, 100.0623),
     'krabi': GeoPoint(8.0863, 98.9063),
     'singapore': GeoPoint(1.3521, 103.8198),
     'singapur': GeoPoint(1.3521, 103.8198),
+    'marina bay': GeoPoint(1.2838, 103.8591),
+    'orchard': GeoPoint(1.3048, 103.8318),
     'sin': GeoPoint(1.3644, 103.9915),
     'kuala lumpur': GeoPoint(3.1390, 101.6869),
     'kul': GeoPoint(2.7456, 101.7072),
@@ -302,37 +364,79 @@ class TripMapHelper {
     'eze': GeoPoint(-34.8222, -58.5358),
   };
 
-  /// Resolves the geographic coordinates for a given city or airport name/code.
+  /// Resolves the geographic coordinates for a given city or airport name/code or address.
   static GeoPoint resolveCoordinates(String nameOrCode, {String? contextCountry}) {
     final clean = nameOrCode.toLowerCase().trim();
+
+    // 0. Normalize address typos e.g. "sammish" -> "sammamish"
+    final normalized = clean
+        .replaceAll('sammish', 'sammamish')
+        .replaceAll(RegExp(r'\b\d{5}(-\d{4})?\b'), '')
+        .trim();
 
     // 1. Direct match
     if (_knownCoordinates.containsKey(clean)) {
       return _knownCoordinates[clean]!;
+    }
+    if (_knownCoordinates.containsKey(normalized)) {
+      return _knownCoordinates[normalized]!;
     }
 
     // 2. Extract potential 3-letter IATA code in parentheses e.g. "SEA (Seattle)" or "SIN (Singapore Changi)"
     final iataMatch = RegExp(r'\b([A-Za-z]{3})\b').allMatches(nameOrCode);
     for (final m in iataMatch) {
       final code = m.group(1)!.toLowerCase();
+      if (code == 'usa' || code == 'the' || code == 'and' || code == 'for') continue;
       if (_knownCoordinates.containsKey(code)) {
         return _knownCoordinates[code]!;
       }
     }
 
-    // 3. Partial substring matching against known cities
-    for (final entry in _knownCoordinates.entries) {
-      if (entry.key.length >= 4 && (clean.contains(entry.key) || entry.key.contains(clean))) {
-        return entry.value;
+    // 3. Match against known places sorted by length descending so specific landmarks/streets
+    // like "3942 west lake sammamish" or "west lake sammamish" match before "lake" or "seattle"
+    final sortedKeys = _knownCoordinates.keys.toList()
+      ..sort((a, b) => b.length.compareTo(a.length));
+
+    for (final key in sortedKeys) {
+      if (key.length >= 4) {
+        if (clean.contains(key) || normalized.contains(key)) {
+          return _knownCoordinates[key]!;
+        }
       }
     }
 
-    // 4. Country/region fallback with deterministic offset based on string hash
+    // 4. Split address by commas (e.g. "3942 West Lake Sammish Pkwy SE, Bellevue WA 98008, USA")
+    // and check each comma segment
+    final segments = clean.split(',');
+    for (final seg in segments) {
+      final segClean = seg
+          .trim()
+          .replaceAll('sammish', 'sammamish')
+          .replaceAll(RegExp(r'\b(wa|ca|ny|fl|tx|il|or|co|nv)\b'), '')
+          .trim();
+      for (final key in sortedKeys) {
+        if (key.length >= 4 && (segClean.contains(key) || key.contains(segClean))) {
+          return _knownCoordinates[key]!;
+        }
+      }
+    }
+
+    // 5. Country/region fallback with deterministic offset based on string hash
     final hash = clean.codeUnits.fold<int>(0, (s, c) => s + c);
     final offsetLat = ((hash % 100) - 50) / 100.0 * 2.0; // +/- 1 deg
     final offsetLng = (((hash ~/ 100) % 100) - 50) / 100.0 * 2.0;
 
-    final countryLower = (contextCountry ?? '').toLowerCase();
+    final countryLower = (contextCountry ?? '').toLowerCase().trim();
+
+    // If contextCountry is a known city (e.g. "Seattle", "Tokyo", "Bangkok"), anchor locally
+    if (_knownCoordinates.containsKey(countryLower)) {
+      final cityCoord = _knownCoordinates[countryLower]!;
+      return GeoPoint(
+        cityCoord.lat + (((hash % 50) - 25) / 1000.0),
+        cityCoord.lng + ((((hash ~/ 50) % 50) - 25) / 1000.0),
+      );
+    }
+
     if (countryLower.contains('vietnam') || clean.contains('vietnam')) {
       return GeoPoint(16.0 + offsetLat, 107.0 + offsetLng);
     }
@@ -356,6 +460,17 @@ class TripMapHelper {
     }
     if (countryLower.contains('france') || clean.contains('france')) {
       return GeoPoint(46.5 + offsetLat, 2.5 + offsetLng);
+    }
+    if (countryLower.contains('seattle') || clean.contains('seattle')) {
+      return GeoPoint(47.6062 + offsetLat * 0.05, -122.3321 + offsetLng * 0.05);
+    }
+    if (countryLower.contains('united states') ||
+        countryLower.contains('usa') ||
+        countryLower.contains('america') ||
+        clean.contains('usa') ||
+        clean.contains('united states')) {
+      // Default center of Continental US, NOT Seattle Arboretum
+      return GeoPoint(39.8283 + offsetLat * 2.0, -98.5795 + offsetLng * 4.0);
     }
 
     // Default global coordinate spread

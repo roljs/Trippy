@@ -253,28 +253,48 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Tab 0: Itinerary tab - FAB should be present
-      expect(find.byType(FloatingActionButton), findsOneWidget);
+      // Tab 0: Day Planner tab - FAB should NOT be present (removed per Req 7)
+      expect(find.byType(FloatingActionButton), findsNothing);
 
-      // Switch to Tab 1: Flights - FAB should be hidden
-      await tester.tap(find.text('Flights'));
-      await tester.pumpAndSettle();
-      expect(find.byTooltip('Add Booking or Activity'), findsNothing);
-
-      // Switch to Tab 2: Stays - FAB should be hidden
-      await tester.tap(find.text('Stays'));
-      await tester.pumpAndSettle();
-      expect(find.byTooltip('Add Booking or Activity'), findsNothing);
-
-      // Switch to Tab 3: Activities - FAB should be hidden
-      await tester.tap(find.text('Activities'));
-      await tester.pumpAndSettle();
-      expect(find.byTooltip('Add Booking or Activity'), findsNothing);
-
-      // Switch back to Tab 0: Itinerary - FAB should be present
-      await tester.tap(find.text('Itinerary'));
+      // Switch to Itinerary - FAB should be present
+      await tester.tap(find.descendant(
+        of: find.byType(BottomNavigationBar),
+        matching: find.text('Itinerary'),
+      ));
       await tester.pumpAndSettle();
       expect(find.byTooltip('Add Booking or Activity'), findsOneWidget);
+
+      // Switch to Flights - FAB should be hidden
+      await tester.tap(find.descendant(
+        of: find.byType(BottomNavigationBar),
+        matching: find.text('Flights'),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Add Booking or Activity'), findsNothing);
+
+      // Switch to Stays - FAB should be hidden
+      await tester.tap(find.descendant(
+        of: find.byType(BottomNavigationBar),
+        matching: find.text('Stays'),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Add Booking or Activity'), findsNothing);
+
+      // Switch to Activities - FAB should be hidden
+      await tester.tap(find.descendant(
+        of: find.byType(BottomNavigationBar),
+        matching: find.text('Activities'),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Add Booking or Activity'), findsNothing);
+
+      // Switch back to Day Planner - FAB should be hidden
+      await tester.tap(find.descendant(
+        of: find.byType(BottomNavigationBar),
+        matching: find.text('Day Planner'),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Add Booking or Activity'), findsNothing);
     });
   });
 }

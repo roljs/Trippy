@@ -271,7 +271,7 @@ void main() {
             date: day1,
             startTime: '09:30',
             title: 'Arrival in Tokyo',
-            category: ActivityCategory.flight,
+            category: ActivityCategory.transport,
           ),
         ],
         day3: [

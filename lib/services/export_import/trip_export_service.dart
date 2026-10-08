@@ -119,10 +119,12 @@ class TripExportService {
       // Ensure the importing user has access/ownership
       var tripToSave = bundle.trip;
       final members = Map<String, MemberRole>.from(tripToSave.members);
-      if (!members.containsKey(currentUserId)) {
+      if (currentUserId.isNotEmpty) {
+        members.remove('user_current');
         members[currentUserId] = MemberRole.owner;
       }
       tripToSave = tripToSave.copyWith(
+        ownerId: currentUserId.isNotEmpty ? currentUserId : tripToSave.ownerId,
         members: members,
         updatedAt: DateTime.now(),
       );
@@ -130,26 +132,37 @@ class TripExportService {
       // Save trip (create or update)
       final existingTrip = await repo.getTripById(tripToSave.id);
       if (existingTrip != null) {
-        await repo.updateTrip(tripToSave);
+        if (currentUserId.isNotEmpty && existingTrip.ownerId != currentUserId) {
+          // If existing trip belongs to another user, import as a new copy with a unique ID
+          final newTripId = 'trip_${DateTime.now().millisecondsSinceEpoch}';
+          tripToSave = tripToSave.copyWith(id: newTripId);
+          await repo.createTrip(tripToSave);
+        } else {
+          // Preserve createdAt to avoid tripping Firestore createdAt immutability rule
+          tripToSave = tripToSave.copyWith(createdAt: existingTrip.createdAt);
+          await repo.updateTrip(tripToSave);
+        }
       } else {
         await repo.createTrip(tripToSave);
       }
 
+      final targetTripId = tripToSave.id;
+
       // Add stays
       for (final stay in bundle.stays) {
-        await repo.addStay(stay);
+        await repo.addStay(stay.copyWith(tripId: targetTripId));
         totalStays++;
       }
 
       // Add activities
       for (final act in bundle.activities) {
-        await repo.addActivity(act);
+        await repo.addActivity(act.copyWith(tripId: targetTripId));
         totalActivities++;
       }
 
       // Add flights
       for (final flight in bundle.flights) {
-        await repo.addFlight(flight);
+        await repo.addFlight(flight.copyWith(tripId: targetTripId));
         totalFlights++;
       }
 

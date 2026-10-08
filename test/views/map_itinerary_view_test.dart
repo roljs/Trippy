@@ -98,7 +98,7 @@ void main() {
       expect(find.text('Bangkok'), findsWidgets);
       expect(find.text('Seattle'), findsWidgets);
 
-      // Verify sequence flow numbers (e.g. 1, 2, 3...)
+      // Verify transition sequence flow numbers
       expect(find.text('1'), findsWidgets);
       expect(find.text('2'), findsWidgets);
     });
@@ -213,8 +213,8 @@ void main() {
       await tester.tap(fitBtn);
       await tester.pumpAndSettle();
 
-      // Toggle Theme
-      final themeBtn = find.byTooltip('Switch to Light Map');
+      // Toggle Theme (default is light map, so button switches to dark map)
+      final themeBtn = find.byTooltip('Switch to Dark Map');
       expect(themeBtn, findsOneWidget);
       await tester.tap(themeBtn);
       await tester.pumpAndSettle();
@@ -272,8 +272,7 @@ void main() {
       // Verify Google Maps attribution
       expect(find.textContaining('Map data ©2026'), findsOneWidget);
 
-      // Verify Map Type tooltips
-      expect(find.byTooltip('Google Maps: Dark'), findsOneWidget);
+      // Verify Map Type tooltips (Roadmap, Satellite, Terrain - duplicate Dark Mode button was removed)
       expect(find.byTooltip('Google Maps: Roadmap'), findsOneWidget);
       expect(find.byTooltip('Google Maps: Satellite'), findsOneWidget);
       expect(find.byTooltip('Google Maps: Terrain'), findsOneWidget);
@@ -287,7 +286,7 @@ void main() {
       await tester.pumpAndSettle();
     });
 
-    testWidgets('MapItineraryView renders Call Out cards with visit indicators for repeated cities',
+    testWidgets('MapItineraryView renders Call Out cards with city names and sequence numbers on transitions',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1280, 900);
       tester.view.devicePixelRatio = 1.0;
@@ -307,9 +306,13 @@ void main() {
       await tester.tap(find.text('Map View'));
       await tester.pumpAndSettle();
 
-      // Multi-visit cities like Tokyo, Hanoi, Bangkok, Seattle have #1 and #2 visit badges
-      expect(find.text('#1'), findsWidgets);
-      expect(find.text('#2'), findsWidgets);
+      // Callout cards show city names without numbers
+      expect(find.text('Tokyo'), findsWidgets);
+      expect(find.text('Hanoi'), findsWidgets);
+      expect(find.text('Bangkok'), findsWidgets);
+      // Sequence numbers appear in transitions
+      expect(find.text('1'), findsWidgets);
+      expect(find.text('2'), findsWidgets);
     });
   });
 }

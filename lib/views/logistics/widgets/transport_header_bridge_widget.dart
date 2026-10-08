@@ -91,7 +91,7 @@ class TransportHeaderData {
     final isArrival = mode.isArrival;
     TransportType type = TransportType.other;
     final titleLower = activity.title.toLowerCase();
-    if (activity.category == ActivityCategory.flight || titleLower.contains('flight')) {
+    if (titleLower.contains('flight')) {
       type = TransportType.flight;
     } else if (titleLower.contains('train') || titleLower.contains('rail') || titleLower.contains('express') || titleLower.contains('frecciarossa') || titleLower.contains('shinkansen')) {
       type = TransportType.train;

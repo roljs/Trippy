@@ -128,6 +128,44 @@ void main() {
       expect(importedStays.first.name, 'ION Adventure Hotel');
     });
 
+    test('Importing JSON reassigns ownerId and members to active user', () async {
+      const mockImportJson = '''{
+  "version": 1,
+  "trip": {
+    "id": "trip_sample_transfer",
+    "title": "Transfer Test Trip",
+    "destination": "Paris, France",
+    "startDate": "2027-01-01T00:00:00.000",
+    "endDate": "2027-01-05T00:00:00.000",
+    "ownerId": "user_current",
+    "inviteCode": "PARIS-27",
+    "defaultInviteRole": "editor",
+    "members": {
+      "user_current": "owner"
+    },
+    "createdAt": "2026-01-01T00:00:00.000",
+    "updatedAt": "2026-01-01T00:00:00.000"
+  },
+  "stays": [],
+  "activities": [],
+  "flights": []
+}''';
+
+      final result = await TripExportService.importFromJson(
+        repository,
+        mockImportJson,
+        'firebase_auth_user_123',
+      );
+
+      expect(result.tripsCount, 1);
+      final savedTrip = await repository.getTripById('trip_sample_transfer');
+      expect(savedTrip, isNotNull);
+      expect(savedTrip!.ownerId, 'firebase_auth_user_123');
+      expect(savedTrip.members.containsKey('firebase_auth_user_123'), isTrue);
+      expect(savedTrip.members['firebase_auth_user_123'], MemberRole.owner);
+      expect(savedTrip.members.containsKey('user_current'), isFalse);
+    });
+
     test('Empty or invalid JSON throws FormatException', () async {
       expect(
         () => TripExportService.importFromJson(

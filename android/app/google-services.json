@@ -1,0 +1,82 @@
+{
+  "project_info": {
+    "project_number": "392329008088",
+    "project_id": "trippy-prod-4524f",
+    "storage_bucket": "trippy-prod-4524f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:392329008088:android:bea8a7ff87c1c9f13fd8ad",
+        "android_client_info": {
+          "package_name": "com.roljs.trippy"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "392329008088-cc3p9vbfg1lr70at96cf5r4vr2lhv6qs.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAfLl1yvBHCFzHCN4u6hk_0ds0Q6of5ZmY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "392329008088-cc3p9vbfg1lr70at96cf5r4vr2lhv6qs.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "392329008088-omh2drr3unok6gqc1c8jc1frqb46g1f9.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.trippy.trippy"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:392329008088:android:2dbe9ec1d1855faa3fd8ad",
+        "android_client_info": {
+          "package_name": "com.trippy.trippy"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "392329008088-cc3p9vbfg1lr70at96cf5r4vr2lhv6qs.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAfLl1yvBHCFzHCN4u6hk_0ds0Q6of5ZmY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "392329008088-cc3p9vbfg1lr70at96cf5r4vr2lhv6qs.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "392329008088-omh2drr3unok6gqc1c8jc1frqb46g1f9.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.trippy.trippy"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

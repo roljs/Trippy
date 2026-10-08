@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/airport_timezone_helper.dart';
 import '../../core/utils/date_formatters.dart';
 import '../../models/models.dart';
 import '../../state/trip_providers.dart';
@@ -27,9 +28,6 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
 
   late DateTime _depDateTime;
   late DateTime _arrDateTime;
-  bool _isNightStay = false;
-  bool _isMainArrival = false;
-  bool _isMainDeparture = false;
   bool _createDepartureTransfer = false;
   bool _createArrivalTransfer = false;
   bool? _userSetDepTransfer;
@@ -50,9 +48,6 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
       _bookingRefController.text = edit.bookingRef ?? '';
       _depDateTime = edit.departureTime;
       _arrDateTime = edit.arrivalTime;
-      _isNightStay = edit.isNightStay;
-      _isMainArrival = edit.isMainArrival;
-      _isMainDeparture = edit.isMainDeparture;
     } else {
       final trip = ref.read(activeTripProvider);
       final start = trip?.startDate ?? DateTime.now();
@@ -67,9 +62,12 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
     final repo = ref.watch(tripRepositoryProvider);
     final isEditing = widget.flightToEdit != null;
 
-    if (activeTrip == null) return const SizedBox.shrink();
+    if (activeTrip == null && !isEditing) return const SizedBox.shrink();
 
-    final allActivities = ref.watch(activeTripActivitiesProvider).value ?? [];
+    final currentTripId = activeTrip?.id ?? widget.flightToEdit?.tripId ?? '';
+    final allActivities = activeTrip != null
+        ? (ref.watch(activeTripActivitiesProvider).value ?? [])
+        : <Activity>[];
     final linkedTransfers = isEditing
         ? allActivities.where((a) =>
             widget.flightToEdit!.linkedActivityIds.contains(a.id) ||
@@ -97,6 +95,13 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
     if (_userSetArrTransfer == null && isEditing) {
       _createArrivalTransfer = hasArrTransfer;
     }
+
+    final duration = AirportTimezoneHelper.calculateDuration(
+      departureTime: _depDateTime,
+      departureAirport: _originController.text.trim(),
+      arrivalTime: _arrDateTime,
+      arrivalAirport: _destController.text.trim(),
+    );
 
     return Container(
       padding: EdgeInsets.only(
@@ -185,12 +190,15 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
             ),
             const SizedBox(height: 14),
 
-            // Departure Time Picker
+            // Departure & Arrival Time Pickers with Visual Duration Plane Graphic
             Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
+                // Departure Time Picker
                 Expanded(
+                  flex: 5,
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       const Text(
                         'Departure',
@@ -219,18 +227,92 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
                             }
                           }
                         },
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                        ),
                         child: Text(
                           '${DateFormatters.shortDate.format(_depDateTime)} ${DateFormatters.time12.format(_depDateTime)}',
-                          style: const TextStyle(fontSize: 12),
+                          style: const TextStyle(fontSize: 11),
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 12),
+
+                // Visual Flight Duration Graphic (Centered between Departure and Arrival)
                 Expanded(
+                  flex: 4,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        const SizedBox(height: 16),
+                        Text(
+                          '${duration.inHours}h ${duration.inMinutes.remainder(60).abs()}m',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.flight,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 3),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              width: 5,
+                              height: 5,
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: AppColors.flight,
+                              ),
+                            ),
+                            Expanded(
+                              child: Container(
+                                height: 1.5,
+                                color: AppColors.flight.withValues(alpha: 0.35),
+                              ),
+                            ),
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 2.0),
+                              child: Icon(
+                                Icons.flight,
+                                size: 15,
+                                color: AppColors.flight,
+                              ),
+                            ),
+                            Expanded(
+                              child: Container(
+                                height: 1.5,
+                                color: AppColors.flight.withValues(alpha: 0.35),
+                              ),
+                            ),
+                            Container(
+                              width: 5,
+                              height: 5,
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: AppColors.flight,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Arrival Time Picker
+                Expanded(
+                  flex: 5,
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       const Text(
                         'Arrival',
@@ -259,9 +341,15 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
                             }
                           }
                         },
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                        ),
                         child: Text(
                           '${DateFormatters.shortDate.format(_arrDateTime)} ${DateFormatters.time12.format(_arrDateTime)}',
-                          style: const TextStyle(fontSize: 12),
+                          style: const TextStyle(fontSize: 11),
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
@@ -304,151 +392,11 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
                 hintText: 'e.g. UA-88902',
               ),
             ),
-            const SizedBox(height: 18),
-            const Divider(height: 1),
-            const SizedBox(height: 16),
 
-            const Text(
-              'Itinerary Role & Special Characteristics',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 10),
-
-            // 1. Night / Stay Flight Switch
-            Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              decoration: BoxDecoration(
-                color: _isNightStay ? const Color(0xFFEFF6FF) : Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: _isNightStay ? const Color(0xFF0284C7) : Colors.grey.shade200,
-                ),
-              ),
-              child: Material(
-                color: Colors.transparent,
-                child: SwitchListTile(
-                  value: _isNightStay,
-                  onChanged: (val) => setState(() {
-                    _isNightStay = val;
-                    if (val) {
-                      _isMainArrival = false;
-                      _isMainDeparture = false;
-                    }
-                  }),
-                  title: const Row(
-                    children: [
-                      Text('🌙  ', style: TextStyle(fontSize: 14)),
-                      Text(
-                        'Night / Stay Flight',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                    ],
-                  ),
-                  subtitle: const Text(
-                    'Shows as an overnight lodging stay header in the Itinerary view.',
-                    style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
-                  ),
-                  dense: true,
-                ),
-              ),
-            ),
-
-            // 2. Main Arrival Flight Switch
-            Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              decoration: BoxDecoration(
-                color: _isMainArrival ? const Color(0xFFEFF6FF) : Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: _isMainArrival ? const Color(0xFF0284C7) : Colors.grey.shade200,
-                ),
-              ),
-              child: Material(
-                color: Colors.transparent,
-                child: SwitchListTile(
-                  value: _isMainArrival,
-                  onChanged: (val) => setState(() {
-                    _isMainArrival = val;
-                    if (val) {
-                      _isNightStay = false;
-                      _isMainDeparture = false;
-                    }
-                  }),
-                  title: const Row(
-                    children: [
-                      Text('✈️  ', style: TextStyle(fontSize: 14)),
-                      Text(
-                        'Main Arrival Flight',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                    ],
-                  ),
-                  subtitle: const Text(
-                    'Shows as the primary Arrival header on Day 1 in the Itinerary view.',
-                    style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
-                  ),
-                  dense: true,
-                ),
-              ),
-            ),
-
-            // 3. Main Departure Flight Switch
-            Container(
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: _isMainDeparture ? const Color(0xFFFFF1F2) : Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: _isMainDeparture ? const Color(0xFFF43F5E) : Colors.grey.shade200,
-                ),
-              ),
-              child: Material(
-                color: Colors.transparent,
-                child: SwitchListTile(
-                  value: _isMainDeparture,
-                  onChanged: (val) => setState(() {
-                    _isMainDeparture = val;
-                    if (val) {
-                      _isNightStay = false;
-                      _isMainArrival = false;
-                    }
-                  }),
-                  title: const Row(
-                    children: [
-                      Text('🛫  ', style: TextStyle(fontSize: 14)),
-                      Text(
-                        'Main Departure Flight',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                    ],
-                  ),
-                  subtitle: const Text(
-                    'Shows as the primary Departure header on the final day in the Itinerary view.',
-                    style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
-                  ),
-                  dense: true,
-                ),
-              ),
-            ),
 
             // Linked Airport Ground Transfers Section (shown when editing or when linked transfers exist)
-            if (linkedTransfers.isNotEmpty) ...[
+            // Linked Airport Ground Transfers Section (always shown when editing or when linked transfers exist)
+            if (isEditing || linkedTransfers.isNotEmpty) ...[
               Container(
                 margin: const EdgeInsets.only(bottom: 16),
                 padding: const EdgeInsets.all(12),
@@ -508,165 +456,257 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
                       ],
                     ),
                     const SizedBox(height: 8),
-                    ...linkedTransfers.map((xfer) {
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.grey.shade200),
+                    if (linkedTransfers.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Text(
+                          'No transportation activities linked to this flight yet.',
+                          style: TextStyle(fontSize: 12, color: AppColors.textSecondary, fontStyle: FontStyle.italic),
                         ),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(8),
-                          onTap: () {
-                            showModalBottomSheet(
-                              context: context,
-                              isScrollControlled: true,
-                              backgroundColor: Colors.transparent,
-                              builder: (ctx) => AddActivitySheet(activityToEdit: xfer),
-                            );
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.directions_car_rounded, size: 16, color: AppColors.transport),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        xfer.title,
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                          color: AppColors.textPrimary,
+                      )
+                    else
+                      ...linkedTransfers.map((xfer) {
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey.shade200),
+                          ),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: () {
+                              showModalBottomSheet(
+                                context: context,
+                                isScrollControlled: true,
+                                backgroundColor: Colors.transparent,
+                                builder: (ctx) => AddActivitySheet(activityToEdit: xfer),
+                              );
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.directions_car_rounded, size: 16, color: AppColors.transport),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                xfer.title,
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: AppColors.textPrimary,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                            if (xfer.isToAirport) ...[
+                                              const SizedBox(width: 6),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFFEFF6FF),
+                                                  borderRadius: BorderRadius.circular(4),
+                                                  border: Border.all(color: const Color(0xFF93C5FD), width: 0.8),
+                                                ),
+                                                child: const Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    Icon(Icons.flight_takeoff_rounded, size: 10, color: Color(0xFF2563EB)),
+                                                    SizedBox(width: 3),
+                                                    Text(
+                                                      'TO AIRPORT',
+                                                      style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w800, color: Color(0xFF1D4ED8)),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ] else if (xfer.isFromAirport) ...[
+                                              const SizedBox(width: 6),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFFF0FDF4),
+                                                  borderRadius: BorderRadius.circular(4),
+                                                  border: Border.all(color: const Color(0xFF86EFAC), width: 0.8),
+                                                ),
+                                                child: const Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    Icon(Icons.flight_land_rounded, size: 10, color: Color(0xFF16A34A)),
+                                                    SizedBox(width: 3),
+                                                    Text(
+                                                      'FROM AIRPORT',
+                                                      style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w800, color: Color(0xFF15803D)),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ],
                                         ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      Text(
-                                        '${DateFormatters.shortDate.format(xfer.date)}  •  ${DateFormatters.formatTimeString(xfer.startTime)}${xfer.location != null ? "  •  ${xfer.location}" : ""}',
-                                        style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
+                                        Text(
+                                          '${DateFormatters.shortDate.format(xfer.date)}  •  ${DateFormatters.formatTimeString(xfer.startTime)}${xfer.location != null ? "  •  ${xfer.location}" : ""}',
+                                          style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                                const Icon(Icons.chevron_right_rounded, size: 16, color: AppColors.textMuted),
-                                if (widget.flightToEdit != null) ...[
-                                  const SizedBox(width: 4),
-                                  IconButton(
-                                    icon: const Icon(Icons.link_off_rounded, size: 16, color: Colors.red),
-                                    tooltip: 'Unlink Transfer',
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                    onPressed: () async {
-                                      final remainingIds = widget.flightToEdit!.linkedActivityIds.where((id) => id != xfer.id).toList();
-                                      await repo.updateFlight(widget.flightToEdit!.copyWith(linkedActivityIds: remainingIds));
-                                      await repo.updateActivity(xfer.copyWith(flightId: null));
-                                    },
-                                  ),
+                                  const Icon(Icons.chevron_right_rounded, size: 16, color: AppColors.textMuted),
+                                  if (widget.flightToEdit != null) ...[
+                                    const SizedBox(width: 4),
+                                    IconButton(
+                                      icon: Icon(Icons.link_off_rounded, size: 16, color: Colors.amber.shade800),
+                                      tooltip: 'Unlink Transfer',
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                      onPressed: () async {
+                                        final remainingIds = widget.flightToEdit!.linkedActivityIds.where((id) => id != xfer.id).toList();
+                                        await repo.updateFlight(widget.flightToEdit!.copyWith(linkedActivityIds: remainingIds));
+                                        await repo.updateActivity(xfer.copyWith(flightId: null));
+                                      },
+                                    ),
+                                    const SizedBox(width: 4),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete_outline, size: 16, color: Colors.red),
+                                      tooltip: 'Delete Transfer',
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                      onPressed: () async {
+                                        final confirm = await showDialog<bool>(
+                                          context: context,
+                                          builder: (ctx) => AlertDialog(
+                                            title: const Text('Delete Transfer'),
+                                            content: Text('Are you sure you want to permanently delete "${xfer.title}"?'),
+                                            actions: [
+                                              TextButton(
+                                                onPressed: () => Navigator.pop(ctx, false),
+                                                child: const Text('Cancel'),
+                                              ),
+                                              ElevatedButton(
+                                                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                                                onPressed: () => Navigator.pop(ctx, true),
+                                                child: const Text('Delete', style: TextStyle(color: Colors.white)),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                        if (confirm == true) {
+                                          final remainingIds = widget.flightToEdit!.linkedActivityIds.where((id) => id != xfer.id).toList();
+                                          await repo.updateFlight(widget.flightToEdit!.copyWith(linkedActivityIds: remainingIds));
+                                          await repo.deleteActivity(currentTripId, xfer.id);
+                                        }
+                                      },
+                                    ),
+                                  ],
                                 ],
-                              ],
+                              ),
                             ),
                           ),
-                        ),
-                      );
-                    }),
+                        );
+                      }),
                   ],
                 ),
               ),
             ],
 
-            // Ground transport activities options
-            Container(
-              margin: const EdgeInsets.only(bottom: 16),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: (_createDepartureTransfer || _createArrivalTransfer)
-                    ? AppColors.transportContainer.withValues(alpha: 0.3)
-                    : Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
+            // Ground transport activities options (only shown when adding a new flight)
+            if (!isEditing) ...[
+              Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
                   color: (_createDepartureTransfer || _createArrivalTransfer)
-                      ? AppColors.transport.withValues(alpha: 0.4)
-                      : Colors.grey.shade300,
+                      ? AppColors.transportContainer.withValues(alpha: 0.3)
+                      : Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: (_createDepartureTransfer || _createArrivalTransfer)
+                        ? AppColors.transport.withValues(alpha: 0.4)
+                        : Colors.grey.shade300,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.directions_subway_rounded, size: 16, color: AppColors.transport),
+                        SizedBox(width: 6),
+                        Text(
+                          'Airport Ground Transfers',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.transport),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Material(
+                      color: Colors.transparent,
+                      child: CheckboxListTile(
+                        value: _createDepartureTransfer,
+                        activeColor: AppColors.transport,
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                          hasDepTransfer
+                              ? 'Transfer: Hotel to ${_originController.text.trim().isEmpty ? 'Departure' : _originController.text.trim()} Airport (Already linked - will sync)'
+                              : 'Transfer: Hotel to ${_originController.text.trim().isEmpty ? 'Departure' : _originController.text.trim()} Airport',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                        subtitle: Text(
+                          hasDepTransfer
+                              ? 'Syncs transfer date/time with departure: ${DateFormatters.shortDate.format(_depDateTime)} (~2 hrs before flight) without duplicates'
+                              : 'Creates transport activity on ${DateFormatters.shortDate.format(_depDateTime)} (~2 hrs before flight)',
+                          style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                        ),
+                        onChanged: (val) {
+                          setState(() {
+                            _userSetDepTransfer = val ?? false;
+                            _createDepartureTransfer = val ?? false;
+                          });
+                        },
+                      ),
+                    ),
+                    Material(
+                      color: Colors.transparent,
+                      child: CheckboxListTile(
+                        value: _createArrivalTransfer,
+                        activeColor: AppColors.transport,
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                          hasArrTransfer
+                              ? 'Transfer: ${_destController.text.trim().isEmpty ? 'Arrival' : _destController.text.trim()} Airport to Hotel (Already linked - will sync)'
+                              : 'Transfer: ${_destController.text.trim().isEmpty ? 'Arrival' : _destController.text.trim()} Airport to Hotel',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                        subtitle: Text(
+                          hasArrTransfer
+                              ? 'Syncs transfer date/time with arrival: ${DateFormatters.shortDate.format(_arrDateTime)} (~45 min after arrival) without duplicates'
+                              : 'Creates transport activity on ${DateFormatters.shortDate.format(_arrDateTime)} (~45 min after arrival)',
+                          style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                        ),
+                        onChanged: (val) {
+                          setState(() {
+                            _userSetArrTransfer = val ?? false;
+                            _createArrivalTransfer = val ?? false;
+                          });
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
-                    children: [
-                      Icon(Icons.directions_subway_rounded, size: 16, color: AppColors.transport),
-                      SizedBox(width: 6),
-                      Text(
-                        'Airport Ground Transfers',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.transport),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Material(
-                    color: Colors.transparent,
-                    child: CheckboxListTile(
-                      value: _createDepartureTransfer,
-                      activeColor: AppColors.transport,
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(
-                        hasDepTransfer
-                            ? 'Transfer: Hotel to ${_originController.text.trim().isEmpty ? 'Departure' : _originController.text.trim()} Airport (Already linked - will sync)'
-                            : 'Transfer: Hotel to ${_originController.text.trim().isEmpty ? 'Departure' : _originController.text.trim()} Airport',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: Text(
-                        hasDepTransfer
-                            ? 'Syncs transfer date/time with departure: ${DateFormatters.shortDate.format(_depDateTime)} (~2 hrs before flight) without duplicates'
-                            : 'Creates transport activity on ${DateFormatters.shortDate.format(_depDateTime)} (~2 hrs before flight)',
-                        style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
-                      ),
-                      onChanged: (val) {
-                        setState(() {
-                          _userSetDepTransfer = val ?? false;
-                          _createDepartureTransfer = val ?? false;
-                        });
-                      },
-                    ),
-                  ),
-                  Material(
-                    color: Colors.transparent,
-                    child: CheckboxListTile(
-                      value: _createArrivalTransfer,
-                      activeColor: AppColors.transport,
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(
-                        hasArrTransfer
-                            ? 'Transfer: ${_destController.text.trim().isEmpty ? 'Arrival' : _destController.text.trim()} Airport to Hotel (Already linked - will sync)'
-                            : 'Transfer: ${_destController.text.trim().isEmpty ? 'Arrival' : _destController.text.trim()} Airport to Hotel',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: Text(
-                        hasArrTransfer
-                            ? 'Syncs transfer date/time with arrival: ${DateFormatters.shortDate.format(_arrDateTime)} (~45 min after arrival) without duplicates'
-                            : 'Creates transport activity on ${DateFormatters.shortDate.format(_arrDateTime)} (~45 min after arrival)',
-                        style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
-                      ),
-                      onChanged: (val) {
-                        setState(() {
-                          _userSetArrTransfer = val ?? false;
-                          _createArrivalTransfer = val ?? false;
-                        });
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            ],
 
             Row(
               children: [
@@ -699,7 +739,7 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
                       );
                       if (confirm == true && context.mounted) {
                         await repo.deleteFlight(
-                            activeTrip.id, widget.flightToEdit!.id);
+                            currentTripId, widget.flightToEdit!.id);
                         if (context.mounted) Navigator.pop(context);
                       }
                     },
@@ -714,33 +754,9 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
                       final newFlightId = widget.flightToEdit?.id ??
                           'flt_${DateTime.now().millisecondsSinceEpoch}';
 
-                      // If marking as main arrival or main departure, clear previous flags on other flights
-                      if (_isMainArrival || _isMainDeparture) {
-                        final currentFlights =
-                            await repo.getFlights(activeTrip.id);
-                        for (final f in currentFlights) {
-                          if (f.id != newFlightId) {
-                            bool changed = false;
-                            bool arr = f.isMainArrival;
-                            bool dep = f.isMainDeparture;
-                            if (_isMainArrival && arr) {
-                              arr = false;
-                              changed = true;
-                            }
-                            if (_isMainDeparture && dep) {
-                              dep = false;
-                              changed = true;
-                            }
-                            if (changed) {
-                              await repo.updateFlight(f.copyWith(
-                                isMainArrival: arr,
-                                isMainDeparture: dep,
-                              ));
-                            }
-                          }
-                        }
-                      }
 
+
+                      final targetTripId = activeTrip?.id ?? widget.flightToEdit?.tripId ?? '';
                       final List<String> currentLinkedIds = [
                         ...(widget.flightToEdit?.linkedActivityIds ?? const <String>[]),
                       ];
@@ -771,7 +787,7 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
                           final depActId = 'act_${DateTime.now().millisecondsSinceEpoch}_dep_xfer';
                           final act = Activity(
                             id: depActId,
-                            tripId: activeTrip.id,
+                            tripId: targetTripId,
                             flightId: newFlightId,
                             date: DateTime(depTransferTime.year, depTransferTime.month, depTransferTime.day),
                             startTime: '$h:$m',
@@ -812,7 +828,7 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
                           final arrActId = 'act_${DateTime.now().millisecondsSinceEpoch + 1}_arr_xfer';
                           final act = Activity(
                             id: arrActId,
-                            tripId: activeTrip.id,
+                            tripId: targetTripId,
                             flightId: newFlightId,
                             date: DateTime(arrTransferTime.year, arrTransferTime.month, arrTransferTime.day),
                             startTime: '$h:$m',
@@ -831,7 +847,7 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
 
                       final flight = Flight(
                         id: newFlightId,
-                        tripId: activeTrip.id,
+                        tripId: targetTripId,
                         airline: _airlineController.text.trim(),
                         flightNumber: _flightNumController.text.trim(),
                         departureAirport: _originController.text.trim(),
@@ -839,9 +855,6 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
                         departureTime: _depDateTime,
                         arrivalTime: _arrDateTime,
                         isOvernight: _arrDateTime.day != _depDateTime.day,
-                        isNightStay: _isNightStay,
-                        isMainArrival: _isMainArrival,
-                        isMainDeparture: _isMainDeparture,
                         terminal: _terminalController.text.trim().isEmpty
                             ? null
                             : _terminalController.text.trim(),
@@ -877,14 +890,13 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
   }
 
   void _showLinkTransferDialog(BuildContext context, WidgetRef ref, Flight flight, List<Activity> activities) {
+    // Only show activities in Transportation category that are not already linked
     final availableToLink = activities.where((a) =>
-      !flight.linkedActivityIds.contains(a.id) && a.flightId != flight.id
+      a.category == ActivityCategory.transport &&
+      !flight.linkedActivityIds.contains(a.id) &&
+      a.flightId != flight.id
     ).toList()
-      ..sort((a, b) {
-        if (a.category == ActivityCategory.transport && b.category != ActivityCategory.transport) return -1;
-        if (a.category != ActivityCategory.transport && b.category == ActivityCategory.transport) return 1;
-        return a.date.compareTo(b.date);
-      });
+      ..sort((a, b) => a.date.compareTo(b.date));
 
     showDialog(
       context: context,
@@ -908,7 +920,7 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
               ? const Padding(
                   padding: EdgeInsets.symmetric(vertical: 20),
                   child: Text(
-                    'No available activities to link. Create a transport activity first.',
+                    'No available transportation activities to link. Create a transport activity first.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: AppColors.textSecondary),
                   ),
@@ -918,12 +930,11 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
                   itemCount: availableToLink.length,
                   itemBuilder: (c, idx) {
                     final act = availableToLink[idx];
-                    final isTransport = act.category == ActivityCategory.transport;
                     return ListTile(
                       dense: true,
-                      leading: Icon(
-                        isTransport ? Icons.directions_subway_rounded : Icons.local_activity_rounded,
-                        color: isTransport ? AppColors.transport : AppColors.primary,
+                      leading: const Icon(
+                        Icons.directions_subway_rounded,
+                        color: AppColors.transport,
                         size: 20,
                       ),
                       title: Text(act.title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),

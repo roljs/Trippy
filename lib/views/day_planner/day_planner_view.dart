@@ -11,6 +11,7 @@ import '../common/add_activity_sheet.dart';
 import '../common/add_flight_sheet.dart';
 import '../common/add_stay_sheet.dart';
 import '../logistics/widgets/manage_day_locations_dialog.dart';
+import 'widgets/day_planner_map_panel.dart';
 
 class DayPlannerView extends ConsumerStatefulWidget {
   final void Function([DateTime? initialDate, Activity? activityToEdit])?
@@ -37,6 +38,20 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
   DateTime? _selectedDate;
   final ScrollController _timelineScrollController = ScrollController();
   bool _hasInitialScrolled = false;
+  bool _isDesktopSuggestionsVisible = true;
+  bool _isDesktopMapVisible = false;
+  Activity? _selectedMapActivity;
+  DateTime? _lastSyncedFocusedDate;
+
+  void _changeSelectedDate(DateTime newDate) {
+    setState(() {
+      _selectedDate = newDate;
+      _lastSyncedFocusedDate = newDate;
+      _hasInitialScrolled = false;
+      _selectedMapActivity = null;
+    });
+    ref.read(focusedTripDateProvider.notifier).setDate(newDate);
+  }
 
   @override
   void dispose() {
@@ -83,8 +98,21 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
       }
     }
 
-    for (final f in flights) {
-      allMinutes.add(f.departureTime.hour * 60 + f.departureTime.minute);
+    if (_selectedDate != null) {
+      for (final f in flights) {
+        final depDate = DateTime(
+            f.departureTime.year, f.departureTime.month, f.departureTime.day);
+        if (_isSameDay(depDate, _selectedDate!)) {
+          allMinutes.add(f.departureTime.hour * 60 + f.departureTime.minute);
+        } else {
+          // Arriving or continuing overnight flight starts at 00:00 midnight
+          allMinutes.add(0);
+        }
+      }
+    } else {
+      for (final f in flights) {
+        allMinutes.add(f.departureTime.hour * 60 + f.departureTime.minute);
+      }
     }
 
     final int targetMinute =
@@ -107,6 +135,7 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
     TimeOfDay? initialStartTime,
     TimeOfDay? initialEndTime,
     Activity? activityToEdit,
+    String? initialMealType,
   }) {
     showModalBottomSheet(
       context: context,
@@ -119,6 +148,7 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
         initialCategory: initialCategory,
         initialStartTime: initialStartTime,
         initialEndTime: initialEndTime,
+        initialMealType: initialMealType,
       ),
     );
   }
@@ -155,6 +185,438 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
         builder: (ctx) => AddFlightSheet(flightToEdit: flight),
       );
     }
+  }
+
+  static int _getActivityStartMinutes(Activity activity) {
+    return _parseMinutes(activity.startTime);
+  }
+
+  static int _getActivityEndMinutes(Activity activity) {
+    final start = _getActivityStartMinutes(activity);
+    if (activity.endTime != null && activity.endTime!.isNotEmpty) {
+      final end = _parseMinutes(activity.endTime!);
+      if (end > start) return end;
+    }
+    return start + 60;
+  }
+
+  static String _formatMinutesToHHmm(int minutes) {
+    final h = (minutes ~/ 60) % 24;
+    final m = minutes % 60;
+    return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
+  }
+
+  List<_OverlapGroup> _detectOverlapGroups(List<Activity> activities) {
+    if (activities.length < 2) return [];
+
+    final n = activities.length;
+    final adj = List.generate(n, (_) => <int>[]);
+
+    for (int i = 0; i < n; i++) {
+      final startI = _getActivityStartMinutes(activities[i]);
+      final endI = _getActivityEndMinutes(activities[i]);
+
+      for (int j = i + 1; j < n; j++) {
+        final startJ = _getActivityStartMinutes(activities[j]);
+        final endJ = _getActivityEndMinutes(activities[j]);
+
+        // Activities overlap if max(startI, startJ) < min(endI, endJ)
+        if (max(startI, startJ) < min(endI, endJ)) {
+          adj[i].add(j);
+          adj[j].add(i);
+        }
+      }
+    }
+
+    final visited = List<bool>.filled(n, false);
+    final groups = <_OverlapGroup>[];
+    int groupId = 1;
+
+    for (int i = 0; i < n; i++) {
+      if (visited[i] || adj[i].isEmpty) continue;
+
+      final component = <Activity>[];
+      final queue = <int>[i];
+      visited[i] = true;
+
+      while (queue.isNotEmpty) {
+        final curr = queue.removeAt(0);
+        component.add(activities[curr]);
+
+        for (final neighbor in adj[curr]) {
+          if (!visited[neighbor]) {
+            visited[neighbor] = true;
+            queue.add(neighbor);
+          }
+        }
+      }
+
+      if (component.length >= 2) {
+        component.sort((a, b) => _getActivityStartMinutes(a)
+            .compareTo(_getActivityStartMinutes(b)));
+
+        final groupStart = component.map(_getActivityStartMinutes).reduce(min);
+        final groupEnd = component.map(_getActivityEndMinutes).reduce(max);
+
+        groups.add(_OverlapGroup(
+          id: groupId++,
+          activities: component,
+          startMinutes: groupStart,
+          endMinutes: groupEnd,
+        ));
+      }
+    }
+
+    groups.sort((a, b) => a.startMinutes.compareTo(b.startMinutes));
+    return groups;
+  }
+
+  void _openMobileSuggestionsSheet({
+    required Trip trip,
+    required DateTime currentDate,
+    required int dayNumber,
+    required int dayIndex,
+    required bool canEdit,
+    required _LocationInfo wakeUpInfo,
+    required _LocationInfo sleepAtInfo,
+    required List<String> effectiveLocations,
+    required String defaultCountry,
+    required dynamic repo,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) {
+        return Consumer(
+          builder: (context, ref, _) {
+            final activitiesByDay = ref.watch(activitiesByDayProvider);
+            final currentDayActivities = activitiesByDay[currentDate] ?? [];
+            final currentTrip = ref.watch(activeTripProvider) ?? trip;
+            final stays = ref.watch(sortedActiveTripStaysProvider).value ?? [];
+            final allFlights = ref.watch(activeTripFlightsProvider).value ?? [];
+            final dateStr = Trip.dateToKey(currentDate);
+            final customLocations = currentTrip.dayLocations[dateStr];
+            final currentEffectiveLocations = customLocations ?? [defaultCountry];
+            final currentRepo = ref.read(tripRepositoryProvider);
+            final currentSuggestions = _generateSuggestions(
+              trip: currentTrip,
+              currentDate: currentDate,
+              dayNumber: dayNumber,
+              dayIndex: dayIndex,
+              dayActivities: currentDayActivities,
+              wakeUpInfo: wakeUpInfo,
+              sleepAtInfo: sleepAtInfo,
+              effectiveLocations: currentEffectiveLocations,
+              defaultCountry: defaultCountry,
+              stays: stays,
+              allFlights: allFlights,
+              repo: currentRepo,
+            );
+            final currentOverlapGroups =
+                _detectOverlapGroups(currentDayActivities);
+
+            return DraggableScrollableSheet(
+              initialChildSize: 0.75,
+              minChildSize: 0.4,
+              maxChildSize: 0.95,
+              builder: (ctx, scrollController) {
+                return Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius:
+                        BorderRadius.vertical(top: Radius.circular(20)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black26,
+                        blurRadius: 16,
+                        offset: Offset(0, -2),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      // Drag handle
+                      Container(
+                        margin: const EdgeInsets.only(top: 10, bottom: 6),
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      Expanded(
+                        child: _buildSuggestionsPane(
+                          suggestions: currentSuggestions,
+                          overlapGroups: currentOverlapGroups,
+                          dayNumber: dayNumber,
+                          canEdit: canEdit,
+                          dayActivities: currentDayActivities,
+                          currentDate: currentDate,
+                          onClose: () => Navigator.pop(sheetCtx),
+                          isModal: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildFloatingSuggestionsBulb({
+    required int suggestionsCount,
+    required int overlapsCount,
+    required VoidCallback onTap,
+  }) {
+    final hasOverlaps = overlapsCount > 0;
+    final totalCount = suggestionsCount + overlapsCount;
+
+    return Material(
+      color: Colors.transparent,
+      child: Tooltip(
+        message: hasOverlaps
+            ? '$overlapsCount conflict${overlapsCount == 1 ? '' : 's'} detected'
+            : 'Suggestions ($totalCount)',
+        child: InkWell(
+          key: const ValueKey('floating_suggestions_bulb'),
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(28),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: hasOverlaps
+                  ? const Color(0xFFFEF2F2)
+                  : const Color(0xFFFFFBEB),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: hasOverlaps
+                    ? const Color(0xFFFCA5A5)
+                    : const Color(0xFFFCD34D),
+                width: 1.8,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: (hasOverlaps ? Colors.red : Colors.amber)
+                      .withValues(alpha: 0.3),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(
+                  hasOverlaps
+                      ? Icons.warning_amber_rounded
+                      : Icons.lightbulb_rounded,
+                  size: 26,
+                  color: hasOverlaps
+                      ? const Color(0xFFDC2626)
+                      : const Color(0xFFD97706),
+                ),
+                if (totalCount > 0)
+                  Positioned(
+                    right: -6,
+                    top: -6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 5, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: hasOverlaps
+                            ? const Color(0xFFDC2626)
+                            : const Color(0xFFD97706),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.white, width: 1.5),
+                      ),
+                      constraints:
+                          const BoxConstraints(minWidth: 18, minHeight: 18),
+                      child: Center(
+                        child: Text(
+                          '$totalCount',
+                          style: const TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openMobileMapSheet({
+    required Trip trip,
+    required DateTime currentDate,
+    required int dayNumber,
+    required List<Activity> dayActivities,
+    required List<Flight> dayFlights,
+    required List<Stay> stays,
+    required String defaultCountry,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) {
+        return Consumer(
+          builder: (context, ref, _) {
+            final activitiesByDay = ref.watch(activitiesByDayProvider);
+            final currentDayActivities = activitiesByDay[currentDate] ?? dayActivities;
+            final currentTrip = ref.watch(activeTripProvider) ?? trip;
+            final currentStays = ref.watch(sortedActiveTripStaysProvider).value ?? stays;
+            final currentFlights = ref.watch(activeTripFlightsProvider).value ?? dayFlights;
+
+            return StatefulBuilder(
+              builder: (ctx, setModalState) {
+                return DraggableScrollableSheet(
+                  initialChildSize: 0.85,
+                  minChildSize: 0.45,
+                  maxChildSize: 0.96,
+                  builder: (sheetContentCtx, scrollController) {
+                    return Container(
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        borderRadius:
+                            BorderRadius.vertical(top: Radius.circular(20)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black26,
+                            blurRadius: 16,
+                            offset: Offset(0, -2),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        children: [
+                          // Drag handle
+                          Container(
+                            margin: const EdgeInsets.only(top: 10, bottom: 6),
+                            width: 40,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade300,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                          Expanded(
+                            child: DayPlannerMapPanel(
+                              trip: currentTrip,
+                              date: currentDate,
+                              dayNumber: dayNumber,
+                              dayActivities: currentDayActivities,
+                              dayFlights: currentFlights,
+                              stays: currentStays,
+                              defaultCountry:
+                                  (currentTrip.getCustomLocationsForDate(currentDate)?.firstOrNull) ??
+                                      defaultCountry,
+                              selectedActivity: _selectedMapActivity,
+                              onSelectActivity: (act) {
+                                setModalState(() {
+                                  _selectedMapActivity = act;
+                                });
+                                setState(() {
+                                  _selectedMapActivity = act;
+                                });
+                              },
+                              onClose: () => Navigator.pop(sheetCtx),
+                              isModal: true,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildFloatingMapButton({
+    required int pinCount,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: Tooltip(
+        message: 'Day Map ($pinCount locations)',
+        child: InkWell(
+          key: const ValueKey('floating_map_button'),
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(28),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: AppColors.primary,
+                width: 1.8,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: 0.3),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                const Icon(
+                  Icons.map_rounded,
+                  size: 26,
+                  color: AppColors.primary,
+                ),
+                if (pinCount > 0)
+                  Positioned(
+                    right: -6,
+                    top: -6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 5, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.white, width: 1.5),
+                      ),
+                      constraints:
+                          const BoxConstraints(minWidth: 18, minHeight: 18),
+                      child: Center(
+                        child: Text(
+                          '$pinCount',
+                          style: const TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   void _openEditTripLocations(BuildContext context, Trip trip) {
@@ -244,7 +706,14 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
     }
 
     // Initialize or reconcile selected date
-    if (_selectedDate == null || !days.any((d) => _isSameDay(d, _selectedDate!))) {
+    final focusedDate = ref.watch(focusedTripDateProvider);
+    if (focusedDate != null && (_lastSyncedFocusedDate == null || !_isSameDay(_lastSyncedFocusedDate!, focusedDate))) {
+      _lastSyncedFocusedDate = focusedDate;
+      if (days.any((d) => _isSameDay(d, focusedDate))) {
+        _selectedDate = focusedDate;
+        _hasInitialScrolled = false;
+      }
+    } else if (_selectedDate == null || !days.any((d) => _isSameDay(d, _selectedDate!))) {
       _selectedDate = _computeInitialDate(trip);
       _hasInitialScrolled = false;
     }
@@ -260,7 +729,14 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
     final dayFlights = allFlights.where((f) {
       final dep = DateTime(
           f.departureTime.year, f.departureTime.month, f.departureTime.day);
-      return _isSameDay(dep, currentDate);
+      final arr = DateTime(
+          f.arrivalTime.year, f.arrivalTime.month, f.arrivalTime.day);
+      final effectiveArr = arr.isAfter(dep)
+          ? arr
+          : (f.spansAcrossDays ? dep.add(const Duration(days: 1)) : dep);
+
+      final cur = DateTime(currentDate.year, currentDate.month, currentDate.day);
+      return !cur.isBefore(dep) && !cur.isAfter(effectiveArr);
     }).toList();
 
     // Trigger auto-scroll on initial load or date change
@@ -289,17 +765,6 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
       allFlights: allFlights,
     );
 
-    // Compute Suggestions
-    final suggestions = _generateSuggestions(
-      trip: trip,
-      currentDate: currentDate,
-      dayNumber: dayNumber,
-      dayIndex: currentDayIndex,
-      dayActivities: dayActivities,
-      wakeUpInfo: wakeUpInfo,
-      sleepAtInfo: sleepAtInfo,
-    );
-
     final isToday = _isSameDay(currentDate, DateTime.now());
     final customLocations = trip.getCustomLocationsForDate(currentDate);
     final defaultCountry = LocationInferenceHelper.inferTargetCountryForDay(
@@ -309,6 +774,23 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
       tripDestination: trip.destination,
     );
     final effectiveLocations = customLocations ?? [defaultCountry];
+
+    // Compute Suggestions
+    final suggestions = _generateSuggestions(
+      trip: trip,
+      currentDate: currentDate,
+      dayNumber: dayNumber,
+      dayIndex: currentDayIndex,
+      dayActivities: dayActivities,
+      wakeUpInfo: wakeUpInfo,
+      sleepAtInfo: sleepAtInfo,
+      effectiveLocations: effectiveLocations,
+      defaultCountry: defaultCountry,
+      stays: stays,
+      allFlights: allFlights,
+      repo: repo,
+    );
+    final overlapGroups = _detectOverlapGroups(dayActivities);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -326,243 +808,431 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
               ),
               child: Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryContainer,
-                      borderRadius: BorderRadius.circular(8),
+                  if (constraints.maxWidth >= 500) ...[
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryContainer,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.view_agenda_rounded,
+                        size: 16,
+                        color: AppColors.primary,
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.view_agenda_rounded,
-                      size: 16,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'DAY PLANNER  •  ${days.length} DAYS',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.8,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                  if (showFullHeaderInfo) ...[
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 8),
                     Text(
-                      DateFormatters.formatTripDateRange(
-                          trip.startDate, trip.endDate),
+                      'DAY PLANNER  •  ${days.length} DAYS',
                       style: const TextStyle(
                         fontSize: 12,
-                        color: AppColors.textMuted,
-                        fontWeight: FontWeight.w500,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                        color: AppColors.textSecondary,
                       ),
                     ),
-                  ],
-                  const Spacer(),
-
-                  // Day Navigation Controls (Prev, Dropdown Selector, Next)
-                  IconButton(
-                    icon: const Icon(Icons.chevron_left_rounded, size: 22),
-                    tooltip: 'Previous Day',
-                    visualDensity: VisualDensity.compact,
-                    onPressed: currentDayIndex > 0
-                        ? () {
-                            setState(() {
-                              _selectedDate = days[currentDayIndex - 1];
-                              _hasInitialScrolled = false;
-                            });
-                          }
-                        : null,
-                  ),
-
-                  // Jump to Day Dropdown Picker
-                  PopupMenuButton<int>(
-                    tooltip: 'Jump to specific day',
-                    initialValue: currentDayIndex,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey.shade300),
+                    if (showFullHeaderInfo) ...[
+                      const SizedBox(width: 12),
+                      Text(
+                        DateFormatters.formatTripDateRange(
+                            trip.startDate, trip.endDate),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textMuted,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
+                    ],
+                  ],
+                  // Centered Day Navigation Controls (Prev, Dropdown Selector, Next)
+                  Expanded(
+                    child: Center(
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.calendar_today_rounded,
-                              size: 13, color: Colors.grey.shade700),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Day $dayNumber of ${days.length}',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textPrimary,
-                            ),
+                          IconButton(
+                            icon: const Icon(Icons.chevron_left_rounded, size: 22),
+                            tooltip: 'Previous Day',
+                            visualDensity: VisualDensity.compact,
+                            onPressed: currentDayIndex > 0
+                                ? () => _changeSelectedDate(days[currentDayIndex - 1])
+                                : null,
                           ),
-                          const SizedBox(width: 4),
-                          const Icon(Icons.arrow_drop_down_rounded, size: 18),
+
+                          // Jump to Day Dropdown Picker
+                          PopupMenuButton<int>(
+                            tooltip: 'Jump to specific day',
+                            initialValue: currentDayIndex,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade100,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.grey.shade300),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.calendar_today_rounded,
+                                      size: 13, color: Colors.grey.shade700),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Day $dayNumber of ${days.length}',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  const Icon(Icons.arrow_drop_down_rounded, size: 18),
+                                ],
+                              ),
+                            ),
+                            itemBuilder: (ctx) {
+                              return [
+                                for (int k = 0; k < days.length; k++)
+                                  PopupMenuItem<int>(
+                                    value: k,
+                                    child: Row(
+                                      children: [
+                                        Text(
+                                          'Day ${k + 1}',
+                                          style: TextStyle(
+                                            fontWeight: k == currentDayIndex
+                                                ? FontWeight.w800
+                                                : FontWeight.w600,
+                                            color: k == currentDayIndex
+                                                ? AppColors.primary
+                                                : AppColors.textPrimary,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          DateFormatters.dayHeader.format(days[k]),
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: AppColors.textMuted,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                              ];
+                            },
+                            onSelected: (idx) => _changeSelectedDate(days[idx]),
+                          ),
+
+                          IconButton(
+                            icon: const Icon(Icons.chevron_right_rounded, size: 22),
+                            tooltip: 'Next Day',
+                            visualDensity: VisualDensity.compact,
+                            onPressed: currentDayIndex < days.length - 1
+                                ? () => _changeSelectedDate(days[currentDayIndex + 1])
+                                : null,
+                          ),
+
+                          if (!isToday &&
+                              days.any((d) => _isSameDay(d, DateTime.now()))) ...[
+                            const SizedBox(width: 4),
+                            TextButton.icon(
+                              style: TextButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                              ),
+                              icon: const Icon(Icons.today_rounded, size: 15),
+                              label: const Text('Today', style: TextStyle(fontSize: 12)),
+                              onPressed: () => _changeSelectedDate(days.firstWhere(
+                                  (d) => _isSameDay(d, DateTime.now()))),
+                            ),
+                          ],
                         ],
                       ),
                     ),
-                    itemBuilder: (ctx) {
-                      return [
-                        for (int k = 0; k < days.length; k++)
-                          PopupMenuItem<int>(
-                            value: k,
-                            child: Row(
-                              children: [
-                                Text(
-                                  'Day ${k + 1}',
-                                  style: TextStyle(
-                                    fontWeight: k == currentDayIndex
-                                        ? FontWeight.w800
-                                        : FontWeight.w600,
-                                    color: k == currentDayIndex
-                                        ? AppColors.primary
-                                        : AppColors.textPrimary,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  DateFormatters.dayHeader.format(days[k]),
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: AppColors.textMuted,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                      ];
-                    },
-                    onSelected: (idx) {
-                      setState(() {
-                        _selectedDate = days[idx];
-                        _hasInitialScrolled = false;
-                      });
-                    },
                   ),
 
-                  IconButton(
-                    icon: const Icon(Icons.chevron_right_rounded, size: 22),
-                    tooltip: 'Next Day',
-                    visualDensity: VisualDensity.compact,
-                    onPressed: currentDayIndex < days.length - 1
-                        ? () {
-                            setState(() {
-                              _selectedDate = days[currentDayIndex + 1];
-                              _hasInitialScrolled = false;
-                            });
-                          }
-                        : null,
-                  ),
-
-                  if (!isToday &&
-                      days.any((d) => _isSameDay(d, DateTime.now()))) ...[
+                  if (isWide) ...[
                     const SizedBox(width: 4),
-                    TextButton.icon(
-                      style: TextButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                    IconButton(
+                      icon: Icon(
+                        _isDesktopMapVisible
+                            ? Icons.map_rounded
+                            : Icons.map_outlined,
+                        color: _isDesktopMapVisible
+                            ? AppColors.primary
+                            : AppColors.textSecondary,
+                        size: 20,
                       ),
-                      icon: const Icon(Icons.today_rounded, size: 15),
-                      label: const Text('Today', style: TextStyle(fontSize: 12)),
+                      tooltip: _isDesktopMapVisible
+                          ? 'Hide Day Map'
+                          : 'Show Day Map',
+                      visualDensity: VisualDensity.compact,
                       onPressed: () {
                         setState(() {
-                          _selectedDate = days.firstWhere(
-                              (d) => _isSameDay(d, DateTime.now()));
-                          _hasInitialScrolled = false;
+                          _isDesktopMapVisible = !_isDesktopMapVisible;
+                          if (!_isDesktopMapVisible) {
+                            _selectedMapActivity = null;
+                          }
                         });
                       },
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      icon: Icon(
+                        _isDesktopSuggestionsVisible
+                            ? Icons.lightbulb_rounded
+                            : Icons.lightbulb_outline_rounded,
+                        color: _isDesktopSuggestionsVisible
+                            ? const Color(0xFFD97706)
+                            : AppColors.textSecondary,
+                        size: 20,
+                      ),
+                      tooltip: _isDesktopSuggestionsVisible
+                          ? 'Hide Suggestions'
+                          : 'Show Suggestions',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () {
+                        setState(() {
+                          _isDesktopSuggestionsVisible =
+                              !_isDesktopSuggestionsVisible;
+                        });
+                      },
+                    ),
+                  ] else ...[
+                    IconButton(
+                      icon: const Icon(Icons.map_outlined,
+                          size: 20, color: AppColors.textSecondary),
+                      tooltip: 'Show Day Map',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => _openMobileMapSheet(
+                        trip: trip,
+                        currentDate: currentDate,
+                        dayNumber: dayNumber,
+                        dayActivities: dayActivities,
+                        dayFlights: dayFlights,
+                        stays: stays,
+                        defaultCountry:
+                            effectiveLocations.firstOrNull ?? defaultCountry,
+                      ),
                     ),
                   ],
                 ],
               ),
             ),
 
-            // Main Content Area: Single-Day Pane + Right Suggestions Pane
+            // Main Content Area: Single-Day Pane + Right Suggestions Pane + Map Panel
             Expanded(
               child: Container(
                 color: const Color(0xFFF8FAFC),
-                child: Center(
-                  child: SingleChildScrollView(
-                    scrollDirection: isWide ? Axis.horizontal : Axis.vertical,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 16),
-                    child: isWide
-                        ? Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              // 1. Single Day Pane (expanded, ~450dp)
-                              SizedBox(
-                                width: 450,
-                                height: constraints.maxHeight - 75,
-                                child: _buildSingleDayPane(
-                                  trip: trip,
-                                  date: currentDate,
-                                  dayNumber: dayNumber,
-                                  isToday: isToday,
-                                  canEdit: canEdit,
-                                  effectiveLocations: effectiveLocations,
-                                  defaultCountry: defaultCountry,
-                                  dayActivities: dayActivities,
-                                  dayFlights: dayFlights,
-                                  wakeUpInfo: wakeUpInfo,
-                                  sleepAtInfo: sleepAtInfo,
-                                  repo: repo,
-                                ),
+                child: isWide
+                    ? Stack(
+                        children: [
+                          Center(
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 20, vertical: 16),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  // 1. Single Day Pane (expanded, ~420dp or 540dp if suggestions and map hidden)
+                                  SizedBox(
+                                    width: _isDesktopMapVisible
+                                        ? 420
+                                        : (_isDesktopSuggestionsVisible
+                                            ? 450
+                                            : 540),
+                                    height: constraints.maxHeight - 75,
+                                    child: _buildSingleDayPane(
+                                      trip: trip,
+                                      date: currentDate,
+                                      dayNumber: dayNumber,
+                                      isToday: isToday,
+                                      canEdit: canEdit,
+                                      effectiveLocations: effectiveLocations,
+                                      defaultCountry: defaultCountry,
+                                      dayActivities: dayActivities,
+                                      dayFlights: dayFlights,
+                                      wakeUpInfo: wakeUpInfo,
+                                      sleepAtInfo: sleepAtInfo,
+                                      repo: repo,
+                                    ),
+                                  ),
+                                  if (_isDesktopSuggestionsVisible) ...[
+                                    const SizedBox(width: 20),
+                                    // 2. Right Suggestions Pane (~340dp or 380dp)
+                                    SizedBox(
+                                      width: _isDesktopMapVisible ? 340 : 380,
+                                      height: constraints.maxHeight - 75,
+                                      child: _buildSuggestionsPane(
+                                        suggestions: suggestions,
+                                        overlapGroups: overlapGroups,
+                                        dayNumber: dayNumber,
+                                        canEdit: canEdit,
+                                        dayActivities: dayActivities,
+                                        currentDate: currentDate,
+                                        onClose: () => setState(() =>
+                                            _isDesktopSuggestionsVisible =
+                                                false),
+                                      ),
+                                    ),
+                                  ],
+                                  if (_isDesktopMapVisible) ...[
+                                    const SizedBox(width: 20),
+                                    // 3. Map Panel (takes advantage of remaining desktop real estate)
+                                    SizedBox(
+                                      width: max(
+                                        460.0,
+                                        constraints.maxWidth -
+                                            40.0 -
+                                            420.0 -
+                                            (_isDesktopSuggestionsVisible
+                                                ? (340.0 + 20.0)
+                                                : 0.0) -
+                                            20.0,
+                                      ),
+                                      height: constraints.maxHeight - 75,
+                                      child: DayPlannerMapPanel(
+                                        trip: trip,
+                                        date: currentDate,
+                                        dayNumber: dayNumber,
+                                        dayActivities: dayActivities,
+                                        dayFlights: dayFlights,
+                                        stays: stays,
+                                        defaultCountry:
+                                            effectiveLocations.firstOrNull ??
+                                                defaultCountry,
+                                        selectedActivity: _selectedMapActivity,
+                                        onSelectActivity: (act) {
+                                          setState(() {
+                                            _selectedMapActivity = act;
+                                          });
+                                        },
+                                        onClose: () {
+                                          setState(() {
+                                            _isDesktopMapVisible = false;
+                                            _selectedMapActivity = null;
+                                          });
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
-                              const SizedBox(width: 24),
-
-                              // 2. Right Suggestions Pane (~380dp)
-                              SizedBox(
-                                width: 380,
-                                height: constraints.maxHeight - 75,
-                                child: _buildSuggestionsPane(
-                                  suggestions: suggestions,
-                                  dayNumber: dayNumber,
-                                  canEdit: canEdit,
-                                ),
-                              ),
-                            ],
-                          )
-                        : Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              // Mobile layout: Single Day Pane
-                              SizedBox(
-                                height: 600,
-                                child: _buildSingleDayPane(
-                                  trip: trip,
-                                  date: currentDate,
-                                  dayNumber: dayNumber,
-                                  isToday: isToday,
-                                  canEdit: canEdit,
-                                  effectiveLocations: effectiveLocations,
-                                  defaultCountry: defaultCountry,
-                                  dayActivities: dayActivities,
-                                  dayFlights: dayFlights,
-                                  wakeUpInfo: wakeUpInfo,
-                                  sleepAtInfo: sleepAtInfo,
-                                  repo: repo,
-                                ),
-                              ),
-                              const SizedBox(height: 20),
-                              // Mobile layout: Suggestions Pane below
-                              _buildSuggestionsPane(
-                                suggestions: suggestions,
-                                dayNumber: dayNumber,
-                                canEdit: canEdit,
-                              ),
-                            ],
+                            ),
                           ),
-                  ),
-                ),
+                          if (!_isDesktopSuggestionsVisible)
+                            Positioned(
+                              right: 24,
+                              bottom: 24,
+                              child: _buildFloatingSuggestionsBulb(
+                                suggestionsCount: suggestions.length,
+                                overlapsCount: overlapGroups.length,
+                                onTap: () => setState(() =>
+                                    _isDesktopSuggestionsVisible = true),
+                              ),
+                            ),
+                          if (!_isDesktopMapVisible)
+                            Positioned(
+                              right: 24,
+                              bottom: !_isDesktopSuggestionsVisible ? 90 : 24,
+                              child: _buildFloatingMapButton(
+                                pinCount: dayActivities
+                                    .where((a) =>
+                                        (a.location != null &&
+                                            a.location!.trim().isNotEmpty) ||
+                                        (a.effectiveFromLocation != null &&
+                                            a.effectiveFromLocation!
+                                                .trim()
+                                                .isNotEmpty) ||
+                                        (a.effectiveToLocation != null &&
+                                            a.effectiveToLocation!
+                                                .trim()
+                                                .isNotEmpty))
+                                    .length,
+                                onTap: () => setState(
+                                    () => _isDesktopMapVisible = true),
+                              ),
+                            ),
+                        ],
+                      )
+                    : Stack(
+                        children: [
+                          // Mobile layout: Single Day Pane fills the entire screen
+                          Positioned.fill(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 12),
+                              child: _buildSingleDayPane(
+                                trip: trip,
+                                date: currentDate,
+                                dayNumber: dayNumber,
+                                isToday: isToday,
+                                canEdit: canEdit,
+                                effectiveLocations: effectiveLocations,
+                                defaultCountry: defaultCountry,
+                                dayActivities: dayActivities,
+                                dayFlights: dayFlights,
+                                wakeUpInfo: wakeUpInfo,
+                                sleepAtInfo: sleepAtInfo,
+                                repo: repo,
+                              ),
+                            ),
+                          ),
+                          // Floating Map icon on the side
+                          Positioned(
+                            right: 20,
+                            bottom: 90,
+                            child: _buildFloatingMapButton(
+                              pinCount: dayActivities
+                                  .where((a) =>
+                                      (a.location != null &&
+                                          a.location!.trim().isNotEmpty) ||
+                                      (a.effectiveFromLocation != null &&
+                                          a.effectiveFromLocation!
+                                              .trim()
+                                              .isNotEmpty) ||
+                                      (a.effectiveToLocation != null &&
+                                          a.effectiveToLocation!
+                                              .trim()
+                                              .isNotEmpty))
+                                  .length,
+                              onTap: () => _openMobileMapSheet(
+                                trip: trip,
+                                currentDate: currentDate,
+                                dayNumber: dayNumber,
+                                dayActivities: dayActivities,
+                                dayFlights: dayFlights,
+                                stays: stays,
+                                defaultCountry: defaultCountry,
+                              ),
+                            ),
+                          ),
+                          // Floating Bulb icon on the side
+                          Positioned(
+                            right: 20,
+                            bottom: 24,
+                            child: _buildFloatingSuggestionsBulb(
+                              suggestionsCount: suggestions.length,
+                              overlapsCount: overlapGroups.length,
+                              onTap: () => _openMobileSuggestionsSheet(
+                                trip: trip,
+                                currentDate: currentDate,
+                                dayNumber: dayNumber,
+                                dayIndex: currentDayIndex,
+                                canEdit: canEdit,
+                                wakeUpInfo: wakeUpInfo,
+                                sleepAtInfo: sleepAtInfo,
+                                effectiveLocations: effectiveLocations,
+                                defaultCountry: defaultCountry,
+                                repo: repo,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
               ),
             ),
           ],
@@ -588,6 +1258,20 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
     required _LocationInfo sleepAtInfo,
     required dynamic repo,
   }) {
+    String? startStr;
+    String? endStr;
+    if (dayActivities.isNotEmpty) {
+      final firstAct = dayActivities.reduce((a, b) =>
+          _getActivityStartMinutes(a) <= _getActivityStartMinutes(b) ? a : b);
+      startStr = DateFormatters.formatTimeString(firstAct.startTime);
+
+      final lastAct = dayActivities.reduce((a, b) =>
+          _getActivityEndMinutes(a) >= _getActivityEndMinutes(b) ? a : b);
+      final lastEndMin = _getActivityEndMinutes(lastAct);
+      endStr = DateFormatters.formatTimeString(
+          lastAct.endTime ?? _formatMinutesToHHmm(lastEndMin));
+    }
+
     return Container(
       decoration: BoxDecoration(
         color: isToday
@@ -674,6 +1358,31 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
+                      const SizedBox(height: 3),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.schedule_rounded,
+                            size: 11,
+                            color: isToday ? Colors.white70 : AppColors.textMuted,
+                          ),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              (startStr != null && endStr != null)
+                                  ? 'Start: $startStr • End: $endStr'
+                                  : 'No activities scheduled',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: isToday ? Colors.white70 : AppColors.textSecondary,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
                       const SizedBox(height: 6),
                       // Location tags
                       Wrap(
@@ -697,20 +1406,24 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                                 children: [
                                   Icon(
                                     Icons.place_rounded,
-                                    size: 11,
+                                    size: 10,
                                     color: isToday
                                         ? Colors.white
                                         : AppColors.primary,
                                   ),
                                   const SizedBox(width: 2),
-                                  Text(
-                                    loc,
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w700,
-                                      color: isToday
-                                          ? Colors.white
-                                          : AppColors.primary,
+                                  Flexible(
+                                    child: Text(
+                                      loc,
+                                      style: TextStyle(
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: isToday
+                                            ? Colors.white
+                                            : AppColors.primary,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
                                 ],
@@ -786,6 +1499,49 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
                       color: isToday ? Colors.white : AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                InkWell(
+                  onTap: () {
+                    ref.read(focusedTripDateProvider.notifier).setDate(date);
+                    ref.read(itineraryViewModeProvider.notifier).setMode(ItineraryViewMode.full);
+                    ref.read(navTabIndexProvider.notifier).setTab(1);
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isToday
+                          ? Colors.white.withValues(alpha: 0.25)
+                          : AppColors.primaryContainer.withValues(alpha: 0.8),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isToday
+                            ? Colors.white.withValues(alpha: 0.5)
+                            : AppColors.primary.withValues(alpha: 0.3),
+                        width: 0.8,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.calendar_view_week_rounded,
+                          size: 12,
+                          color: isToday ? Colors.white : AppColors.primary,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Itinerary',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: isToday ? Colors.white : AppColors.primary,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -1137,6 +1893,8 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                   final double cardHeight = clampedDuration * (hourHeight / 60.0);
 
                   final catColor = _getCategoryColor(act.category);
+                  final isSelectedOnMap =
+                      _isDesktopMapVisible && _selectedMapActivity?.id == act.id;
 
                   return Positioned(
                     left: 56,
@@ -1144,22 +1902,40 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                     top: topPos,
                     height: cardHeight,
                     child: InkWell(
-                      onTap: () => widget.onActivityTap != null
+                      onTap: () {
+                        if (_isDesktopMapVisible) {
+                          setState(() {
+                            _selectedMapActivity =
+                                _selectedMapActivity?.id == act.id ? null : act;
+                          });
+                        } else if (widget.onActivityTap != null) {
+                          widget.onActivityTap!(act);
+                        } else {
+                          _openAddActivitySheet(date: date, activityToEdit: act);
+                        }
+                      },
+                      onDoubleTap: () => widget.onActivityTap != null
                           ? widget.onActivityTap!(act)
                           : _openAddActivitySheet(date: date, activityToEdit: act),
                       borderRadius: BorderRadius.circular(8),
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: isSelectedOnMap
+                              ? AppColors.primaryContainer.withValues(alpha: 0.25)
+                              : Colors.white,
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: Colors.grey.shade300,
-                            width: 0.8,
+                            color: isSelectedOnMap
+                                ? AppColors.primary
+                                : Colors.grey.shade300,
+                            width: isSelectedOnMap ? 2.0 : 0.8,
                           ),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.03),
-                              blurRadius: 3,
+                              color: isSelectedOnMap
+                                  ? AppColors.primary.withValues(alpha: 0.15)
+                                  : Colors.black.withValues(alpha: 0.03),
+                              blurRadius: isSelectedOnMap ? 6 : 3,
                               offset: const Offset(0, 1),
                             ),
                           ],
@@ -1214,6 +1990,31 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                                                     overflow: TextOverflow.ellipsis,
                                                   ),
                                                 ),
+                                                if (act.mealType != null &&
+                                                    act.mealType!.isNotEmpty) ...[
+                                                  const SizedBox(width: 5),
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(
+                                                        horizontal: 5, vertical: 1),
+                                                    decoration: BoxDecoration(
+                                                      color: AppColors.diningContainer,
+                                                      borderRadius: BorderRadius.circular(4),
+                                                      border: Border.all(
+                                                        color: AppColors.dining.withValues(alpha: 0.3),
+                                                        width: 0.5,
+                                                      ),
+                                                    ),
+                                                    child: Text(
+                                                      act.mealType!.toUpperCase(),
+                                                      style: const TextStyle(
+                                                        fontSize: 8.5,
+                                                        fontWeight: FontWeight.w800,
+                                                        color: AppColors.dining,
+                                                        letterSpacing: 0.3,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
                                               ],
                                             ),
                                             if (act.location != null &&
@@ -1256,17 +2057,51 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
             for (final flt in flights) ...[
               Builder(
                 builder: (context) {
-                  final startMin =
-                      flt.departureTime.hour * 60 + flt.departureTime.minute;
-                  int durationMin = max(45, flt.duration.inMinutes);
+                  final depDate = DateTime(
+                      flt.departureTime.year, flt.departureTime.month, flt.departureTime.day);
+                  final arrDate = DateTime(
+                      flt.arrivalTime.year, flt.arrivalTime.month, flt.arrivalTime.day);
+                  final effectiveArrDate = arrDate.isAfter(depDate)
+                      ? arrDate
+                      : (flt.spansAcrossDays ? depDate.add(const Duration(days: 1)) : depDate);
+
+                  final bool isDepDay = _isSameDay(date, depDate);
+                  final bool isArrDay = _isSameDay(date, effectiveArrDate);
+                  final bool spans = flt.spansAcrossDays || effectiveArrDate.isAfter(depDate);
+
+                  final int startMin;
+                  final int endMin;
+
+                  if (!spans) {
+                    startMin = flt.departureTime.hour * 60 + flt.departureTime.minute;
+                    final rawEnd = flt.arrivalTime.hour * 60 + flt.arrivalTime.minute;
+                    endMin = rawEnd > startMin ? rawEnd : min(1440, startMin + max(45, flt.duration.inMinutes));
+                  } else if (isDepDay) {
+                    // Departure day of multi-day flight: departs at departureTime and covers all hours until 24:00
+                    startMin = flt.departureTime.hour * 60 + flt.departureTime.minute;
+                    endMin = 1440;
+                  } else if (isArrDay) {
+                    // Arrival day of multi-day flight: starts at 00:00 midnight and covers all hours until arrivalTime
+                    startMin = 0;
+                    final rawEnd = flt.arrivalTime.hour * 60 + flt.arrivalTime.minute;
+                    endMin = max(45, rawEnd);
+                  } else {
+                    // Intermediate day: occupies all 24 hours
+                    startMin = 0;
+                    endMin = 1440;
+                  }
+
+                  final int durationMin = max(45, endMin - startMin);
                   final double topPos = startMin * (hourHeight / 60.0);
                   final double cardHeight = durationMin * (hourHeight / 60.0);
+                  final durationText =
+                      '${flt.duration.inHours}h ${flt.duration.inMinutes.remainder(60)}m';
 
                   return Positioned(
                     left: 56,
                     right: 12,
                     top: topPos,
-                    height: max(42.0, cardHeight),
+                    height: max(68.0, cardHeight),
                     child: InkWell(
                       onTap: () => _openEditFlightModal(flt),
                       borderRadius: BorderRadius.circular(8),
@@ -1295,57 +2130,272 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                               Expanded(
                                 child: Padding(
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 4),
-                                  child: Row(
+                                      horizontal: 10, vertical: 6),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            Row(
-                                              children: [
-                                                Text(
-                                                  DateFormatters.time12
-                                                      .format(flt.departureTime),
-                                                  style: const TextStyle(
-                                                    fontSize: 10,
-                                                    fontWeight: FontWeight.w700,
-                                                    color: AppColors.flight,
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 6),
-                                                Flexible(
-                                                  child: Text(
-                                                    '${flt.airline} ${flt.flightNumber}',
-                                                    style: const TextStyle(
-                                                      fontSize: 12,
-                                                      fontWeight: FontWeight.w700,
-                                                      color: AppColors.textPrimary,
-                                                    ),
-                                                    maxLines: 1,
-                                                    overflow: TextOverflow.ellipsis,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            Text(
-                                              '${flt.departureAirport} → ${flt.arrivalAirport}',
+                                      // 1. Airline & Flight Number + Badges Row
+                                      Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.flight_takeoff_rounded,
+                                            size: 13,
+                                            color: AppColors.flight,
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Flexible(
+                                            child: Text(
+                                              '${flt.airline} ${flt.flightNumber}',
                                               style: const TextStyle(
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.w500,
-                                                color: AppColors.textSecondary,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w700,
+                                                color: AppColors.textPrimary,
                                               ),
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
                                             ),
+                                          ),
+                                          if (flt.spansAcrossDays) ...[
+                                            const SizedBox(width: 6),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                  horizontal: 5, vertical: 1),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFFEF3C7),
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: Text(
+                                                isArrDay && !isDepDay
+                                                    ? 'OVERNIGHT (ARRIVING)'
+                                                    : 'OVERNIGHT',
+                                                style: const TextStyle(
+                                                  fontSize: 8,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: Color(0xFFD97706),
+                                                ),
+                                              ),
+                                            ),
                                           ],
-                                        ),
+                                          if (flt.bookingRef != null &&
+                                              flt.bookingRef!.isNotEmpty) ...[
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              'Ref: ${flt.bookingRef}',
+                                              style: const TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w500,
+                                                color: AppColors.textMuted,
+                                              ),
+                                            ),
+                                          ],
+                                        ],
                                       ),
-                                      const Icon(
-                                        Icons.flight_takeoff_rounded,
-                                        size: 16,
-                                        color: AppColors.flight,
+                                      const SizedBox(height: 4),
+
+                                      // 2. Departure - Graphic - Arrival Row
+                                      Row(
+                                        children: [
+                                          // Departure Airport & Time
+                                          Flexible(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(
+                                                  flt.departureAirport,
+                                                  style: const TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w800,
+                                                    color: AppColors.textPrimary,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                                FittedBox(
+                                                  fit: BoxFit.scaleDown,
+                                                  alignment:
+                                                      Alignment.centerLeft,
+                                                  child: Row(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    children: [
+                                                      Text(
+                                                        DateFormatters.time12
+                                                            .format(flt
+                                                                .departureTime),
+                                                        style: const TextStyle(
+                                                          fontSize: 11,
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                          color:
+                                                              AppColors.flight,
+                                                        ),
+                                                      ),
+                                                      if (spans &&
+                                                          isArrDay &&
+                                                          !isDepDay) ...[
+                                                        const SizedBox(width: 2),
+                                                        const Text(
+                                                          '-1d',
+                                                          style: TextStyle(
+                                                            fontSize: 9,
+                                                            fontWeight:
+                                                                FontWeight.w800,
+                                                            color: Color(
+                                                                0xFF0369A1),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+
+                                          // Center Airplane Flight Graphic with Duration
+                                          Expanded(
+                                            child: Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 10.0),
+                                              child: Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Text(
+                                                    durationText,
+                                                    style: const TextStyle(
+                                                      fontSize: 10,
+                                                      fontWeight: FontWeight.w700,
+                                                      color: AppColors.flight,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Row(
+                                                    children: [
+                                                      Container(
+                                                        width: 5,
+                                                        height: 5,
+                                                        decoration:
+                                                            const BoxDecoration(
+                                                          shape:
+                                                              BoxShape.circle,
+                                                          color:
+                                                              AppColors.flight,
+                                                        ),
+                                                      ),
+                                                      Expanded(
+                                                        child: Container(
+                                                          height: 1.5,
+                                                          color: AppColors.flight
+                                                              .withValues(
+                                                                  alpha: 0.35),
+                                                        ),
+                                                      ),
+                                                      const Padding(
+                                                        padding:
+                                                            EdgeInsets.symmetric(
+                                                                horizontal: 3),
+                                                        child: Icon(
+                                                          Icons.flight,
+                                                          size: 13,
+                                                          color:
+                                                              AppColors.flight,
+                                                        ),
+                                                      ),
+                                                      Expanded(
+                                                        child: Container(
+                                                          height: 1.5,
+                                                          color: AppColors.flight
+                                                              .withValues(
+                                                                  alpha: 0.35),
+                                                        ),
+                                                      ),
+                                                      Container(
+                                                        width: 5,
+                                                        height: 5,
+                                                        decoration:
+                                                            const BoxDecoration(
+                                                          shape:
+                                                              BoxShape.circle,
+                                                          color:
+                                                              AppColors.flight,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 1),
+                                                  const Text(
+                                                    'Non-stop',
+                                                    style: TextStyle(
+                                                      fontSize: 9,
+                                                      color: AppColors.textMuted,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+
+                                          // Arrival Airport & Time
+                                          Flexible(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.end,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(
+                                                  flt.arrivalAirport,
+                                                  style: const TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w800,
+                                                    color: AppColors.textPrimary,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                                FittedBox(
+                                                  fit: BoxFit.scaleDown,
+                                                  alignment:
+                                                      Alignment.centerRight,
+                                                  child: Row(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    children: [
+                                                      Text(
+                                                        DateFormatters.time12
+                                                            .format(flt
+                                                                .arrivalTime),
+                                                        style: const TextStyle(
+                                                          fontSize: 11,
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                          color:
+                                                              AppColors.flight,
+                                                        ),
+                                                      ),
+                                                      if (spans && isDepDay) ...[
+                                                        const SizedBox(width: 2),
+                                                        const Text(
+                                                          '+1d',
+                                                          style: TextStyle(
+                                                            fontSize: 9,
+                                                            fontWeight:
+                                                                FontWeight.w800,
+                                                            color: Color(
+                                                                0xFFBE123C),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ],
                                   ),
@@ -1371,22 +2421,32 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
   // ---------------------------------------------------------------------------
   Widget _buildSuggestionsPane({
     required List<_SuggestionItem> suggestions,
+    required List<_OverlapGroup> overlapGroups,
     required int dayNumber,
     required bool canEdit,
+    required List<Activity> dayActivities,
+    required DateTime currentDate,
+    VoidCallback? onClose,
+    bool isModal = false,
   }) {
     return Container(
+      key: const ValueKey('suggestions_pane'),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border, width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
+        borderRadius: isModal
+            ? const BorderRadius.vertical(top: Radius.circular(20))
+            : BorderRadius.circular(16),
+        border: isModal ? null : Border.all(color: AppColors.border, width: 1),
+        boxShadow: isModal
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.03),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1424,34 +2484,55 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                 decoration: BoxDecoration(
-                  color: suggestions.isEmpty
-                      ? const Color(0xFFDCFCE7)
-                      : const Color(0xFFF1F5F9),
+                  color: overlapGroups.isNotEmpty
+                      ? const Color(0xFFFEE2E2)
+                      : suggestions.isEmpty
+                          ? const Color(0xFFDCFCE7)
+                          : const Color(0xFFF1F5F9),
                   borderRadius: BorderRadius.circular(10),
+                  border: overlapGroups.isNotEmpty
+                      ? Border.all(color: const Color(0xFFFECACA))
+                      : null,
                 ),
                 child: Text(
-                  suggestions.isEmpty
-                      ? 'ALL SET'
-                      : '${suggestions.length} ACTION${suggestions.length == 1 ? '' : 'S'}',
+                  overlapGroups.isNotEmpty
+                      ? '${overlapGroups.length} CONFLICT${overlapGroups.length == 1 ? '' : 'S'}'
+                      : suggestions.isEmpty
+                          ? 'ALL SET'
+                          : '${suggestions.length} ACTION${suggestions.length == 1 ? '' : 'S'}',
                   style: TextStyle(
                     fontSize: 9.5,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 0.4,
-                    color: suggestions.isEmpty
-                        ? const Color(0xFF15803D)
-                        : AppColors.textSecondary,
+                    color: overlapGroups.isNotEmpty
+                        ? const Color(0xFFDC2626)
+                        : suggestions.isEmpty
+                            ? const Color(0xFF15803D)
+                            : AppColors.textSecondary,
                   ),
                 ),
               ),
+              if (onClose != null) ...[
+                const SizedBox(width: 4),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                  tooltip: 'Hide suggestions',
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 28, minHeight: 28),
+                  onPressed: onClose,
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 12),
           const Divider(height: 1, color: AppColors.border),
           const SizedBox(height: 12),
 
-          // Suggestion Cards List
+          // Suggestion & Conflict Cards List
           Expanded(
-            child: suggestions.isEmpty
+            child: (suggestions.isEmpty && overlapGroups.isEmpty)
                 ? Center(
                     child: Padding(
                       padding: const EdgeInsets.all(16.0),
@@ -1474,7 +2555,7 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Breakfast, Lunch, Dinner, and Lodging are all confirmed for Day $dayNumber.',
+                            'No time conflicts. Breakfast, Lunch, Dinner, and Lodging are all confirmed for Day $dayNumber.',
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                               fontSize: 12,
@@ -1486,15 +2567,258 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                     ),
                   )
                 : ListView.separated(
-                    itemCount: suggestions.length,
+                    itemCount: overlapGroups.length + suggestions.length,
                     separatorBuilder: (ctx, i) => const SizedBox(height: 10),
                     itemBuilder: (ctx, i) {
-                      final s = suggestions[i];
+                      if (i < overlapGroups.length) {
+                        return _buildOverlapGroupCard(
+                          overlapGroups[i],
+                          canEdit,
+                          currentDate,
+                        );
+                      }
+                      final s = suggestions[i - overlapGroups.length];
                       return _buildSuggestionCard(s, canEdit);
                     },
                   ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildOverlapGroupCard(
+    _OverlapGroup group,
+    bool canEdit,
+    DateTime currentDate,
+  ) {
+    final startTimeStr = DateFormatters.formatTimeString(
+        _formatMinutesToHHmm(group.startMinutes));
+    final endTimeStr = DateFormatters.formatTimeString(
+        _formatMinutesToHHmm(group.endMinutes));
+
+    return Container(
+      key: ValueKey('overlap_group_${group.id}'),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF2F2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: const Color(0xFFFECACA),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.red.withValues(alpha: 0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header row of the overlap group
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEE2E2),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(
+                    Icons.warning_amber_rounded,
+                    size: 15,
+                    color: Color(0xFFDC2626),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Overlap Conflict • Group ${group.id}',
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF991B1B),
+                        ),
+                      ),
+                      Text(
+                        '$startTimeStr – $endTimeStr (${group.activities.length} activities)',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFFB91C1C),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFDC2626),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    'CONFLICT',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.4,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Select an activity below to edit its schedule and resolve the conflict:',
+              style: TextStyle(
+                fontSize: 11,
+                color: Color(0xFF7F1D1D),
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // List of overlapping activities in this group
+            for (final act in group.activities)
+              Container(
+                key: ValueKey('overlap_activity_${act.id}'),
+                margin: const EdgeInsets.only(bottom: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Colors.red.shade100,
+                    width: 0.9,
+                  ),
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: canEdit
+                        ? () => _openAddActivitySheet(
+                              date: currentDate,
+                              activityToEdit: act,
+                            )
+                        : null,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 8),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color: _getCategoryColor(act.category)
+                                  .withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Icon(
+                              _getCategoryIcon(act.category),
+                              size: 14,
+                              color: _getCategoryColor(act.category),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  act.title,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                Wrap(
+                                  crossAxisAlignment:
+                                      WrapCrossAlignment.center,
+                                  spacing: 6,
+                                  runSpacing: 2,
+                                  children: [
+                                    Text(
+                                      '${DateFormatters.formatTimeString(act.startTime)} – ${DateFormatters.formatTimeString(act.endTime ?? _formatMinutesToHHmm(_getActivityEndMinutes(act)))}',
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.red.shade700,
+                                      ),
+                                    ),
+                                    if (act.mealType != null &&
+                                        act.mealType!.isNotEmpty)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 4, vertical: 1),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFFEF3C7),
+                                          borderRadius:
+                                              BorderRadius.circular(3),
+                                        ),
+                                        child: Text(
+                                          act.mealType!.toUpperCase(),
+                                          style: const TextStyle(
+                                            fontSize: 8.5,
+                                            fontWeight: FontWeight.w800,
+                                            color: Color(0xFFB45309),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (canEdit) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 7, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFEE2E2),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    'Edit',
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFFDC2626),
+                                    ),
+                                  ),
+                                  SizedBox(width: 3),
+                                  Icon(
+                                    Icons.edit_rounded,
+                                    size: 11,
+                                    color: Color(0xFFDC2626),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -1621,6 +2945,11 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
     required List<Activity> dayActivities,
     required _LocationInfo wakeUpInfo,
     required _LocationInfo sleepAtInfo,
+    required List<String> effectiveLocations,
+    required String defaultCountry,
+    required List<Stay> stays,
+    required List<Flight> allFlights,
+    required dynamic repo,
   }) {
     final list = <_SuggestionItem>[];
 
@@ -1675,12 +3004,17 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
 
     // 2a: Check Breakfast
     final bool hasBreakfast = dayActivities.any((a) {
+      if (a.mealType != null && a.mealType!.isNotEmpty) {
+        return a.mealType!.toLowerCase() == 'breakfast';
+      }
       final title = a.title.toLowerCase();
       final minutes = _parseMinutes(a.startTime);
-      return a.category == ActivityCategory.dining ||
-          title.contains('breakfast') ||
-          title.contains('desayuno') ||
-          (minutes >= 6 * 60 && minutes <= 11 * 60);
+      if (title.contains('breakfast') || title.contains('desayuno')) {
+        return true;
+      }
+      return a.category == ActivityCategory.dining &&
+          minutes >= 6 * 60 &&
+          minutes <= 11 * 60;
     });
 
     if (!hasBreakfast) {
@@ -1702,20 +3036,26 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
           initialCategory: ActivityCategory.dining,
           initialStartTime: const TimeOfDay(hour: 8, minute: 30),
           initialEndTime: const TimeOfDay(hour: 9, minute: 30),
+          initialMealType: 'breakfast',
         ),
       ));
     }
 
     // 2a: Check Lunch
     final bool hasLunch = dayActivities.any((a) {
+      if (a.mealType != null && a.mealType!.isNotEmpty) {
+        return a.mealType!.toLowerCase() == 'lunch';
+      }
       final title = a.title.toLowerCase();
       final minutes = _parseMinutes(a.startTime);
-      return (a.category == ActivityCategory.dining &&
-              minutes >= 11 * 60 + 30 &&
-              minutes <= 16 * 60) ||
-          title.contains('lunch') ||
+      if (title.contains('lunch') ||
           title.contains('almuerzo') ||
-          title.contains('comida');
+          title.contains('comida')) {
+        return true;
+      }
+      return a.category == ActivityCategory.dining &&
+          minutes >= 11 * 60 + 30 &&
+          minutes <= 16 * 60;
     });
 
     if (!hasLunch) {
@@ -1737,17 +3077,24 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
           initialCategory: ActivityCategory.dining,
           initialStartTime: const TimeOfDay(hour: 13, minute: 0),
           initialEndTime: const TimeOfDay(hour: 14, minute: 15),
+          initialMealType: 'lunch',
         ),
       ));
     }
 
     // 2a: Check Dinner
     final bool hasDinner = dayActivities.any((a) {
+      if (a.mealType != null && a.mealType!.isNotEmpty) {
+        return a.mealType!.toLowerCase() == 'dinner';
+      }
       final title = a.title.toLowerCase();
       final minutes = _parseMinutes(a.startTime);
-      return (a.category == ActivityCategory.dining && minutes >= 17 * 60) ||
-          title.contains('dinner') ||
-          title.contains('cena');
+      if (title.contains('dinner') || title.contains('cena')) {
+        return true;
+      }
+      return a.category == ActivityCategory.dining &&
+          minutes >= 17 * 60 &&
+          minutes <= 24 * 60;
     });
 
     if (!hasDinner) {
@@ -1769,11 +3116,335 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
           initialCategory: ActivityCategory.dining,
           initialStartTime: const TimeOfDay(hour: 19, minute: 30),
           initialEndTime: const TimeOfDay(hour: 21, minute: 0),
+          initialMealType: 'dinner',
         ),
       ));
     }
 
+    // 2d: Check activities without end time (flag missing end time)
+    for (final act in dayActivities) {
+      final hasEndTime = act.endTime != null && act.endTime!.trim().isNotEmpty;
+      if (!hasEndTime) {
+        list.add(_SuggestionItem(
+          icon: Icons.schedule_rounded,
+          iconColor: const Color(0xFFD97706),
+          iconBgColor: const Color(0xFFFEF3C7),
+          borderColor: const Color(0xFFFDE68A),
+          backgroundColor: const Color(0xFFFFFBEB),
+          title: 'Missing End Time: ${act.title}',
+          description:
+              'Activity "${act.title}" does not have an end time set. Specifying an end time helps organize your schedule.',
+          actionLabel: 'Set End Time',
+          actionBgColor: const Color(0xFFFEF3C7),
+          actionTextColor: const Color(0xFFB45309),
+          onAction: () => _openAddActivitySheet(
+            date: currentDate,
+            activityToEdit: act,
+          ),
+        ));
+      }
+    }
+
+    // Flag Transport activities that are missing to and/or from locations
+    for (final act in dayActivities) {
+      if (act.category == ActivityCategory.transport) {
+        final hasFrom = act.effectiveFromLocation != null &&
+            act.effectiveFromLocation!.trim().isNotEmpty;
+        final hasTo = act.effectiveToLocation != null &&
+            act.effectiveToLocation!.trim().isNotEmpty;
+
+        if (!hasFrom || !hasTo) {
+          final String title;
+          final String desc;
+          final String actionText;
+
+          if (!hasFrom && !hasTo) {
+            title = 'Missing Route Locations: ${act.title}';
+            desc =
+                'Transport "${act.title}" is missing both departure (From) and destination (To) locations.';
+            actionText = 'Set Route Locations';
+          } else if (!hasFrom) {
+            title = 'Missing Departure Location: ${act.title}';
+            desc =
+                'Transport "${act.title}" is missing a departure (From) location.';
+            actionText = 'Set Departure Location';
+          } else {
+            title = 'Missing Destination Location: ${act.title}';
+            desc =
+                'Transport "${act.title}" is missing a destination (To) location.';
+            actionText = 'Set Destination Location';
+          }
+
+          list.add(_SuggestionItem(
+            icon: Icons.alt_route_rounded,
+            iconColor: AppColors.transport,
+            iconBgColor: AppColors.transportContainer,
+            borderColor: AppColors.transport.withValues(alpha: 0.35),
+            backgroundColor: AppColors.transportContainer.withValues(alpha: 0.2),
+            title: title,
+            description: desc,
+            actionLabel: actionText,
+            actionBgColor: AppColors.transportContainer,
+            actionTextColor: AppColors.transport,
+            onAction: () => _openAddActivitySheet(
+              date: currentDate,
+              activityToEdit: act,
+            ),
+          ));
+        }
+      }
+    }
+
+    // Location coverage check: Check if day's locations cover all activity locations
+    // Note: Only genuine CITIES must be suggested (no bays, caves, attractions, airports, etc.)
+    final missingCities = <String>{};
+    for (final act in dayActivities) {
+      final loc = act.location?.trim();
+      if (loc == null || loc.isEmpty) continue;
+
+      final candidate = _extractCityCandidate(
+        loc,
+        defaultCountry: defaultCountry,
+        trip: trip,
+        stays: stays,
+        flights: allFlights,
+      );
+      if (candidate == null || candidate.isEmpty) continue;
+
+      bool covered = false;
+      for (final eff in effectiveLocations) {
+        final effTrim = eff.trim();
+        if (effTrim.isEmpty) continue;
+        if (effTrim.toLowerCase() == defaultCountry.trim().toLowerCase()) continue;
+        if (candidate.toLowerCase() == effTrim.toLowerCase() ||
+            candidate.toLowerCase().contains(effTrim.toLowerCase()) ||
+            effTrim.toLowerCase().contains(candidate.toLowerCase())) {
+          covered = true;
+          break;
+        }
+      }
+
+      if (!covered) {
+        missingCities.add(candidate);
+      }
+    }
+
+    for (final missingCity in missingCities) {
+      list.add(_SuggestionItem(
+        icon: Icons.add_location_alt_rounded,
+        iconColor: AppColors.primary,
+        iconBgColor: AppColors.primaryContainer,
+        borderColor: AppColors.primary.withValues(alpha: 0.3),
+        backgroundColor: AppColors.primaryContainer.withValues(alpha: 0.3),
+        title: 'Add missing location: $missingCity',
+        description:
+            'Activities on Day $dayNumber take place in "$missingCity", which is not in today\'s locations.',
+        actionLabel: '+ Add "$missingCity"',
+        actionBgColor: AppColors.primary,
+        actionTextColor: Colors.white,
+        onAction: () async {
+          final current = effectiveLocations
+              .where((l) => l.trim().toLowerCase() != defaultCountry.trim().toLowerCase())
+              .toList();
+          final updated = {...current, missingCity}.toList();
+          await repo.updateDayLocations(trip.id, currentDate, updated);
+        },
+      ));
+    }
+
     return list;
+  }
+
+  String? _extractCityCandidate(
+    String location, {
+    required String defaultCountry,
+    required Trip trip,
+    required List<Stay> stays,
+    required List<Flight> flights,
+  }) {
+    final parts = location
+        .split(',')
+        .map((p) => p.trim())
+        .where((p) => p.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return null;
+
+    final countryLower = defaultCountry.toLowerCase();
+
+    // Check comma parts from right to left (skipping country if present)
+    for (int i = parts.length - 1; i >= 0; i--) {
+      final part = parts[i];
+      final partLower = part.toLowerCase();
+
+      // Skip country names
+      if (partLower == countryLower || _isCountryName(partLower)) {
+        continue;
+      }
+
+      if (_isCity(part, trip: trip, stays: stays, flights: flights)) {
+        return _canonicalCityName(part);
+      }
+    }
+
+    // Also check if any substring matches a known city from stays or flights
+    for (final s in stays) {
+      final stayCity = CityColorHelper.extractCityForStay(s);
+      if (stayCity != null && stayCity.isNotEmpty) {
+        if (location.toLowerCase().contains(stayCity.toLowerCase())) {
+          return stayCity;
+        }
+      }
+    }
+
+    for (final f in flights) {
+      final depCity = _extractCityFromAirportString(f.departureAirport);
+      if (depCity.isNotEmpty && location.toLowerCase().contains(depCity.toLowerCase())) {
+        return depCity;
+      }
+      final arrCity = _extractCityFromAirportString(f.arrivalAirport);
+      if (arrCity.isNotEmpty && location.toLowerCase().contains(arrCity.toLowerCase())) {
+        return arrCity;
+      }
+    }
+
+    return null;
+  }
+
+  static String _extractCityFromAirportString(String str) {
+    if (str.contains('(') && str.contains(')')) {
+      final start = str.indexOf('(') + 1;
+      final end = str.indexOf(')');
+      if (end > start) {
+        final inside = str.substring(start, end).trim();
+        if (inside.length == 3 && inside.toUpperCase() == inside) {
+          return str.substring(0, start - 1).trim();
+        }
+        return inside;
+      }
+    }
+    return str.replaceAll(RegExp(r'\b[A-Z]{3}\b'), '').trim();
+  }
+
+  static bool _isCountryName(String lower) {
+    const countries = {
+      'thailand', 'japan', 'vietnam', 'cambodia', 'singapore',
+      'south korea', 'korea', 'usa', 'united states', 'france',
+      'italy', 'germany', 'spain', 'uk', 'united kingdom',
+      'indonesia', 'malaysia', 'philippines', 'mexico', 'canada',
+      'australia', 'new zealand', 'china', 'india', 'taiwan',
+    };
+    return countries.contains(lower);
+  }
+
+  static bool _isCity(
+    String candidate, {
+    required Trip trip,
+    required List<Stay> stays,
+    required List<Flight> flights,
+  }) {
+    final clean = candidate.trim();
+    if (clean.isEmpty) return false;
+    final lower = clean.toLowerCase();
+
+    // Exclude strings containing non-city words (e.g. bay, cave, island, airport, etc.)
+    final nonCityKeywords = [
+      'bay', 'bahia', 'bahía', 'cave', 'cueva', 'beach', 'playa',
+      'island', 'islands', 'isla', 'islas', 'airport', 'aeropuerto',
+      'terminal', 'gate', 'station', 'estacion', 'estación', 'pier',
+      'port', 'harbor', 'harbour', 'puerto', 'dock', 'cruise',
+      'crucero', 'boat', 'ferry', 'park', 'parque', 'lake', 'lago',
+      'river', 'rio', 'río', 'mountain', 'montaña', 'mount', 'peak',
+      'waterfall', 'cascada', 'temple', 'wat', 'pagoda', 'church',
+      'cathedral', 'mosque', 'museum', 'museo', 'market', 'mercado',
+      'bazaar', 'mall', 'resort', 'hotel', 'hostel', 'villa', 'palace',
+      'palacio', 'castle', 'tower', 'bridge', 'puente', 'street',
+      'road', 'avenue', 'boulevard', 'calle', 'plaza', 'square',
+      'zoo', 'aquarium', 'sanctuary', 'bar', 'cafe', 'café',
+      'restaurant', 'restaurante', 'shop', 'store', 'alley', 'lane',
+    ];
+
+    for (final kw in nonCityKeywords) {
+      final reg = RegExp(r'\b' + RegExp.escape(kw) + r'\b', caseSensitive: false);
+      if (reg.hasMatch(lower)) {
+        return false;
+      }
+    }
+
+    // 1. Matches city from trip stays
+    for (final s in stays) {
+      final c = CityColorHelper.extractCityForStay(s);
+      if (c != null && c.isNotEmpty && c.toLowerCase() == lower) {
+        return true;
+      }
+    }
+
+    // 2. Matches trip start/end location
+    if (trip.startLocation != null && trip.startLocation!.trim().toLowerCase() == lower) {
+      return true;
+    }
+    if (trip.endLocation != null && trip.endLocation!.trim().toLowerCase() == lower) {
+      return true;
+    }
+
+    // 3. Matches flights departure or arrival city
+    for (final f in flights) {
+      final depCity = _extractCityFromAirportString(f.departureAirport).toLowerCase();
+      if (depCity.isNotEmpty && (depCity == lower || lower.contains(depCity))) return true;
+      final arrCity = _extractCityFromAirportString(f.arrivalAirport).toLowerCase();
+      if (arrCity.isNotEmpty && (arrCity == lower || lower.contains(arrCity))) return true;
+    }
+
+    // 4. Matches existing dayLocations in trip
+    if (trip.dayLocations.isNotEmpty) {
+      for (final locs in trip.dayLocations.values) {
+        for (final l in locs) {
+          if (l.trim().toLowerCase() == lower) return true;
+        }
+      }
+    }
+
+    // 5. Common travel cities
+    const knownCities = {
+      'bangkok', 'chiang mai', 'chiang rai', 'phuket', 'krabi', 'pattaya',
+      'ayutthaya', 'hua hin', 'surat thani', 'koh samui', 'samui', 'hanoi',
+      'ha long', 'halong', 'ninh binh', 'da nang', 'danang', 'hoi an', 'hue',
+      'ho chi minh city', 'ho chi minh', 'saigon', 'can tho', 'hai phong',
+      'siem reap', 'phnom penh', 'battambang', 'singapore', 'kuala lumpur',
+      'penang', 'george town', 'tokyo', 'kyoto', 'osaka', 'hiroshima',
+      'nara', 'yokohama', 'sapporo', 'fukuoka', 'nagoya', 'nikko', 'hakone',
+      'kamakura', 'kanazawa', 'takayama', 'kobe', 'miyajima', 'okinawa',
+      'seoul', 'busan', 'incheon', 'jeju', 'taipei', 'kaohsiung', 'hong kong',
+      'macau', 'beijing', 'shanghai', 'london', 'paris', 'rome', 'milan',
+      'florence', 'venice', 'barcelona', 'madrid', 'seville', 'amsterdam',
+      'berlin', 'munich', 'vienna', 'prague', 'budapest', 'zurich', 'geneva',
+      'athens', 'lisbon', 'porto', 'new york', 'san francisco', 'los angeles',
+      'seattle', 'chicago', 'boston', 'miami', 'las vegas', 'honolulu',
+      'vancouver', 'toronto', 'montreal', 'sydney', 'melbourne', 'auckland',
+    };
+
+    return knownCities.contains(lower);
+  }
+
+  static String _canonicalCityName(String text) {
+    final lower = text.trim().toLowerCase();
+    if (lower == 'ha long' || lower == 'halong') return 'Ha Long';
+    if (lower == 'ninh binh') return 'Ninh Binh';
+    if (lower == 'chiang mai') return 'Chiang Mai';
+    if (lower == 'chiang rai') return 'Chiang Rai';
+    if (lower == 'siem reap') return 'Siem Reap';
+    if (lower == 'ho chi minh city' || lower == 'ho chi minh' || lower == 'saigon') return 'Ho Chi Minh City';
+    if (lower == 'da nang' || lower == 'danang') return 'Da Nang';
+    if (lower == 'hoi an') return 'Hoi An';
+    if (lower == 'san francisco') return 'San Francisco';
+    if (lower == 'new york') return 'New York';
+    if (lower == 'los angeles') return 'Los Angeles';
+    if (lower == 'las vegas') return 'Las Vegas';
+    if (lower == 'kuala lumpur') return 'Kuala Lumpur';
+    if (lower == 'hong kong') return 'Hong Kong';
+    return text.trim().split(' ').map((w) {
+      if (w.isEmpty) return w;
+      return w[0].toUpperCase() + w.substring(1).toLowerCase();
+    }).join(' ');
   }
 
   // ---------------------------------------------------------------------------
@@ -1925,8 +3596,6 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
 
   static Color _getCategoryColor(ActivityCategory cat) {
     switch (cat) {
-      case ActivityCategory.flight:
-        return AppColors.flight;
       case ActivityCategory.stay:
         return AppColors.stay;
       case ActivityCategory.transport:
@@ -1943,8 +3612,6 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
 
   static IconData _getCategoryIcon(ActivityCategory cat) {
     switch (cat) {
-      case ActivityCategory.flight:
-        return Icons.flight_takeoff_rounded;
       case ActivityCategory.stay:
         return Icons.hotel_rounded;
       case ActivityCategory.transport:
@@ -2002,3 +3669,18 @@ class _SuggestionItem {
     this.onAction,
   });
 }
+
+class _OverlapGroup {
+  final int id;
+  final List<Activity> activities;
+  final int startMinutes;
+  final int endMinutes;
+
+  const _OverlapGroup({
+    required this.id,
+    required this.activities,
+    required this.startMinutes,
+    required this.endMinutes,
+  });
+}
+

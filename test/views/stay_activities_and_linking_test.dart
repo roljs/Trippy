@@ -227,8 +227,8 @@ void main() {
       expect(find.textContaining('Linked Check-in / Check-out Activities (2)'), findsOneWidget);
       expect(find.text('Check-in: The Chedi Andermatt'), findsOneWidget);
       expect(find.text('Check-out: The Chedi Andermatt'), findsOneWidget);
-      expect(find.text('Link Activity'), findsOneWidget);
-      expect(find.text('Sync linked Check-in & Check-out activities'), findsOneWidget);
+      expect(find.text('Sync linked Check-in & Check-out activities'), findsNothing);
+      expect(find.byIcon(Icons.delete_outline), findsWidgets);
 
       // Tap "Save Changes"
       final saveButton = find.text('Save Changes');

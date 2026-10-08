@@ -1,24 +1,47 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/utils/date_formatters.dart';
+import '../data/repositories/firestore_trip_repository.dart';
 import '../data/repositories/mock_trip_repository.dart';
 import '../data/repositories/trip_repository.dart';
 import '../models/models.dart';
 
+import '../services/auth/auth_service.dart';
+
 // Repository Provider
 final tripRepositoryProvider = Provider<TripRepository>((ref) {
-  return MockTripRepository();
+  try {
+    return FirestoreTripRepository(FirebaseFirestore.instance);
+  } catch (_) {
+    return MockTripRepository();
+  }
 });
 
-// Current active user ID Notifier
-class CurrentUserIdNotifier extends Notifier<String> {
-  @override
-  String build() => 'user_current';
+// Auth Service Provider
+final authServiceProvider = Provider<AuthService>((ref) {
+  return AuthService();
+});
 
-  void setUserId(String id) => state = id;
-}
+// Stream of auth state changes from Firebase
+final authStateChangesProvider = StreamProvider<User?>((ref) {
+  return ref.watch(authServiceProvider).authStateChanges;
+});
 
-final currentUserIdProvider =
-    NotifierProvider<CurrentUserIdNotifier, String>(CurrentUserIdNotifier.new);
+// Current active user ID linked to FirebaseAuth
+final currentUserIdProvider = Provider<String>((ref) {
+  final authUser = ref.watch(authStateChangesProvider).asData?.value;
+  final current =
+      authUser?.uid ?? ref.watch(authServiceProvider).currentUser?.uid;
+  if (current != null && current.isNotEmpty) {
+    return current;
+  }
+  final repo = ref.watch(tripRepositoryProvider);
+  if (repo is MockTripRepository) {
+    return 'user_current';
+  }
+  return '';
+});
 
 // Selected Trip ID Notifier
 class ActiveTripIdNotifier extends Notifier<String?> {
@@ -31,8 +54,8 @@ class ActiveTripIdNotifier extends Notifier<String?> {
 final activeTripIdProvider =
     NotifierProvider<ActiveTripIdNotifier, String?>(ActiveTripIdNotifier.new);
 
-// Itinerary View Mode: Full View vs Compact View vs Map View
-enum ItineraryViewMode { full, compact, map }
+// Itinerary View Mode: Full View vs Compact View vs Map View vs Calendar View
+enum ItineraryViewMode { full, compact, map, calendar }
 
 class ItineraryViewModeNotifier extends Notifier<ItineraryViewMode> {
   @override
@@ -45,10 +68,36 @@ final itineraryViewModeProvider =
     NotifierProvider<ItineraryViewModeNotifier, ItineraryViewMode>(
         ItineraryViewModeNotifier.new);
 
+// Navigation Tab Index: 0 = Day Planner, 1 = Itinerary, 2 = Flights, 3 = Stays, 4 = Activities, 5 = Trips
+class NavTabIndexNotifier extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void setTab(int index) => state = index;
+}
+
+final navTabIndexProvider =
+    NotifierProvider<NavTabIndexNotifier, int>(NavTabIndexNotifier.new);
+
+// Focused Trip Date for cross-view navigation (Day Planner <-> Itinerary <-> Calendar)
+class FocusedTripDateNotifier extends Notifier<DateTime?> {
+  @override
+  DateTime? build() => null;
+
+  void setDate(DateTime? date) => state = date;
+}
+
+final focusedTripDateProvider =
+    NotifierProvider<FocusedTripDateNotifier, DateTime?>(
+        FocusedTripDateNotifier.new);
+
 // Stream of all trips for current user
 final userTripsProvider = StreamProvider<List<Trip>>((ref) {
   final repo = ref.watch(tripRepositoryProvider);
   final userId = ref.watch(currentUserIdProvider);
+  if (userId.isEmpty) {
+    return Stream.value(const <Trip>[]);
+  }
   return repo.watchTripsForUser(userId);
 });
 

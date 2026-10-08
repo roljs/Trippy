@@ -4,9 +4,11 @@ class DateFormatters {
   static final DateFormat dayHeader = DateFormat('EEE, MMM d'); // e.g. Mon, Oct 12
   static final DateFormat shortDate = DateFormat('MMM d'); // e.g. Oct 12
   static final DateFormat fullDate = DateFormat('MMMM d, yyyy'); // e.g. October 12, 2026
+  static final DateFormat monthYear = DateFormat('MMMM yyyy'); // e.g. October 2026
   static final DateFormat time12 = DateFormat('h:mm a'); // e.g. 3:30 PM
   static final DateFormat time24 = DateFormat('HH:mm'); // e.g. 15:30
   static final DateFormat dayOfWeek = DateFormat('EEEE'); // e.g. Monday
+  static final DateFormat weekdayShort = DateFormat('EEE'); // e.g. Mon
 
   /// Formats date range: "Oct 12 - Oct 22, 2026"
   static String formatTripDateRange(DateTime start, DateTime end) {

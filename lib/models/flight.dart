@@ -1,3 +1,5 @@
+import '../core/utils/airport_timezone_helper.dart';
+
 class Flight {
   final String id;
   final String tripId;
@@ -48,7 +50,12 @@ class Flight {
         arrivalTime.day != departureTime.day;
   }
 
-  Duration get duration => arrivalTime.difference(departureTime);
+  Duration get duration => AirportTimezoneHelper.calculateDuration(
+        departureTime: departureTime,
+        departureAirport: departureAirport,
+        arrivalTime: arrivalTime,
+        arrivalAirport: arrivalAirport,
+      );
 
   Flight copyWith({
     String? id,

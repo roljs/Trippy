@@ -16,6 +16,7 @@ class DayColumnWidget extends StatelessWidget {
   final ValueChanged<Activity>? onActivityTap;
   final ValueChanged<Flight>? onFlightTap;
   final VoidCallback? onManageLocations;
+  final VoidCallback? onPlanDay;
 
   const DayColumnWidget({
     super.key,
@@ -29,6 +30,7 @@ class DayColumnWidget extends StatelessWidget {
     this.onActivityTap,
     this.onFlightTap,
     this.onManageLocations,
+    this.onPlanDay,
   });
 
   @override
@@ -80,6 +82,7 @@ class DayColumnWidget extends StatelessWidget {
                       Wrap(
                         crossAxisAlignment: WrapCrossAlignment.center,
                         spacing: 6,
+                        runSpacing: 4,
                         children: [
                           Text(
                             'DAY $dayNumber',
@@ -106,6 +109,46 @@ class DayColumnWidget extends StatelessWidget {
                                   fontSize: 9,
                                   fontWeight: FontWeight.w800,
                                   color: AppColors.primary,
+                                ),
+                              ),
+                            ),
+                          if (onPlanDay != null)
+                            InkWell(
+                              onTap: onPlanDay,
+                              borderRadius: BorderRadius.circular(5),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 4, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: isToday
+                                      ? Colors.white.withValues(alpha: 0.25)
+                                      : AppColors.primaryContainer.withValues(alpha: 0.9),
+                                  borderRadius: BorderRadius.circular(5),
+                                  border: Border.all(
+                                    color: isToday
+                                        ? Colors.white.withValues(alpha: 0.6)
+                                        : AppColors.primary.withValues(alpha: 0.35),
+                                    width: 0.8,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.view_agenda_rounded,
+                                      size: 9,
+                                      color: isToday ? Colors.white : AppColors.primary,
+                                    ),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      'Plan Day',
+                                      style: TextStyle(
+                                        fontSize: 8.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: isToday ? Colors.white : AppColors.primary,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),

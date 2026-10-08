@@ -12,6 +12,7 @@ import '../stays/stays_view.dart';
 import 'add_activity_sheet.dart';
 import 'add_flight_sheet.dart';
 import 'add_stay_sheet.dart';
+import 'user_account_button.dart';
 
 class AppNavScaffold extends ConsumerStatefulWidget {
   const AppNavScaffold({super.key});
@@ -21,8 +22,6 @@ class AppNavScaffold extends ConsumerStatefulWidget {
 }
 
 class _AppNavScaffoldState extends ConsumerState<AppNavScaffold> {
-  int _currentIndex = 0;
-
   void _openAddActivity([Activity? activityToEdit, DateTime? initialDate]) {
     showModalBottomSheet(
       context: context,
@@ -156,9 +155,10 @@ class _AppNavScaffoldState extends ConsumerState<AppNavScaffold> {
     final activeTrip = ref.watch(activeTripProvider);
     final role = ref.watch(activeTripRoleProvider);
     final canEdit = ref.watch(canEditActiveTripProvider);
+    final currentIndex = ref.watch(navTabIndexProvider);
 
     return Scaffold(
-      appBar: _currentIndex == 5 // Dashboard has its own app bar
+      appBar: currentIndex == 5 // Dashboard has its own app bar
           ? null
           : AppBar(
               titleSpacing: 16,
@@ -233,15 +233,17 @@ class _AppNavScaffoldState extends ConsumerState<AppNavScaffold> {
                       ),
                     ),
                     onPressed: () {
-                      setState(() => _currentIndex = 5); // Switch to trips tab
+                      ref.read(navTabIndexProvider.notifier).setTab(5); // Switch to trips tab
                     },
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 8),
                 ],
+                const UserAccountButton(),
+                const SizedBox(width: 8),
               ],
             ),
       body: IndexedStack(
-        index: _currentIndex,
+        index: currentIndex,
         children: [
           DayPlannerView(
             onOpenAddActivity: ([date, act]) => _openAddActivity(act, date),
@@ -270,16 +272,17 @@ class _AppNavScaffoldState extends ConsumerState<AppNavScaffold> {
             onActivityTap: _openAddActivity,
           ),
           TripDashboardScreen(
-            onTripSelected: () => setState(() => _currentIndex = 0),
+            onTripSelected: () =>
+                ref.read(navTabIndexProvider.notifier).setTab(0),
           ),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
+        currentIndex: currentIndex,
         type: BottomNavigationBarType.fixed,
         selectedFontSize: 11,
         unselectedFontSize: 10,
-        onTap: (idx) => setState(() => _currentIndex = idx),
+        onTap: (idx) => ref.read(navTabIndexProvider.notifier).setTab(idx),
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.view_agenda_outlined),
@@ -313,7 +316,7 @@ class _AppNavScaffoldState extends ConsumerState<AppNavScaffold> {
           ),
         ],
       ),
-      floatingActionButton: canEdit && (_currentIndex == 0 || _currentIndex == 1)
+      floatingActionButton: canEdit && (currentIndex == 1)
           ? FloatingActionButton(
               onPressed: _showQuickAddOptions,
               backgroundColor: AppColors.primary,

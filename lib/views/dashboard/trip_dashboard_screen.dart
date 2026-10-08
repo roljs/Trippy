@@ -9,6 +9,8 @@ import '../../services/export_import/file_upload_helper.dart';
 import '../../services/export_import/trip_export_service.dart';
 import '../../state/trip_providers.dart';
 import '../../data/samples/thailandia_sample_trip.dart';
+import '../../data/repositories/firestore_trip_repository.dart';
+import '../common/user_account_button.dart';
 import '../logistics/widgets/transport_header_bridge_widget.dart';
 
 class TripDashboardScreen extends ConsumerWidget {
@@ -147,16 +149,38 @@ class TripDashboardScreen extends ConsumerWidget {
   void _loadThailandSample(BuildContext context, WidgetRef ref) async {
     final repo = ref.read(tripRepositoryProvider);
     final userId = ref.read(currentUserIdProvider);
-    final result = await TripExportService.importFromJson(repo, thailandiaSampleJson, userId);
-    ref.read(activeTripIdProvider.notifier).selectTrip('trip_thailandia_2026');
-    if (context.mounted) {
+
+    if (userId.isEmpty && repo is FirestoreTripRepository) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result.message),
-          backgroundColor: const Color(0xFF15803D),
+        const SnackBar(
+          content: Text('Please sign in to save trips to your account.'),
+          backgroundColor: Colors.red,
         ),
       );
-      onTripSelected?.call();
+      return;
+    }
+
+    try {
+      final result = await TripExportService.importFromJson(repo, thailandiaSampleJson, userId);
+      ref.read(activeTripIdProvider.notifier).selectTrip('trip_thailandia_2026');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result.message),
+            backgroundColor: const Color(0xFF15803D),
+          ),
+        );
+        onTripSelected?.call();
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load sample: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -231,6 +255,8 @@ class TripDashboardScreen extends ConsumerWidget {
             icon: const Icon(Icons.add_rounded),
             onPressed: () => _showCreateTripDialog(context, ref),
           ),
+          const UserAccountButton(),
+          const SizedBox(width: 8),
         ],
       ),
       body: tripsAsync.when(
@@ -482,7 +508,68 @@ class TripDashboardScreen extends ConsumerWidget {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) {
+          final isPermission = e.toString().contains('permission-denied') ||
+              e.toString().contains('permission');
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    isPermission
+                        ? Icons.lock_outline_rounded
+                        : Icons.error_outline_rounded,
+                    size: 48,
+                    color: isPermission ? Colors.amber.shade700 : Colors.red,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    isPermission
+                        ? 'Authentication or Permission Required'
+                        : 'Failed to Load Trips',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    isPermission
+                        ? 'Your session may have expired or requires an authenticated account to access trips.'
+                        : e.toString(),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () => ref.invalidate(userTripsProvider),
+                        icon: const Icon(Icons.refresh_rounded, size: 16),
+                        label: const Text('Retry'),
+                      ),
+                      if (isPermission) ...[
+                        const SizedBox(width: 12),
+                        FilledButton.icon(
+                          onPressed: () => showUserAccountDialog(context, ref),
+                          icon: const Icon(Icons.account_circle_outlined, size: 16),
+                          label: const Text('Manage Account'),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -766,25 +853,11 @@ class _CreateTripDialogState extends State<_CreateTripDialog> {
                     _startDate.year, _startDate.month, _startDate.day, 8, 0),
                 arrivalTime: DateTime(
                     _startDate.year, _startDate.month, _startDate.day, 11, 30),
-                isMainArrival: true,
                 bookingRef: 'PENDING',
                 notes:
                     'Primary arrival flight placeholder. Tap to update flight numbers and schedule.',
               );
               await repo.addFlight(placeholderFlight);
-
-              final placeholderActivity = Activity(
-                id: 'act_arr_${newTrip.id}',
-                tripId: newTrip.id,
-                date: _startDate,
-                startTime: '11:30',
-                title: 'Arrival Flight (TBD)',
-                category: ActivityCategory.flight,
-                location: targetDest,
-                bookingStatus: BookingStatus.planned,
-                notes: 'Scheduled arrival flight to initial destination.',
-              );
-              await repo.addActivity(placeholderActivity);
             } else {
               final placeholderActivity = Activity(
                 id: 'act_arr_${newTrip.id}',
@@ -814,25 +887,11 @@ class _CreateTripDialogState extends State<_CreateTripDialog> {
                     _endDate.year, _endDate.month, _endDate.day, 18, 0),
                 arrivalTime: DateTime(
                     _endDate.year, _endDate.month, _endDate.day, 21, 30),
-                isMainDeparture: true,
                 bookingRef: 'PENDING',
                 notes:
                     'Return departure flight placeholder. Tap to update flight numbers and schedule.',
               );
               await repo.addFlight(placeholderFlight);
-
-              final placeholderActivity = Activity(
-                id: 'act_dep_${newTrip.id}',
-                tripId: newTrip.id,
-                date: _endDate,
-                startTime: '18:00',
-                title: 'Departure Flight (TBD)',
-                category: ActivityCategory.flight,
-                location: targetDest,
-                bookingStatus: BookingStatus.planned,
-                notes: 'Scheduled departure flight returning from trip.',
-              );
-              await repo.addActivity(placeholderActivity);
             } else {
               final placeholderActivity = Activity(
                 id: 'act_dep_${newTrip.id}',
@@ -1219,6 +1278,14 @@ class _ImportTripDialogState extends State<_ImportTripDialog> {
     try {
       final repo = widget.ref.read(tripRepositoryProvider);
       final userId = widget.ref.read(currentUserIdProvider);
+
+      if (userId.isEmpty && repo is FirestoreTripRepository) {
+        setState(() {
+          _isLoading = false;
+          _error = 'You must be signed in to import trips to your account. Please sign in via the account menu.';
+        });
+        return;
+      }
 
       final result = await TripExportService.importFromJson(repo, text, userId);
 

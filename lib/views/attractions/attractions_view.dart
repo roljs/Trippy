@@ -68,8 +68,6 @@ class _AttractionsViewState extends ConsumerState<AttractionsView> {
         return Icons.directions_subway_rounded;
       case ActivityCategory.entertainment:
         return Icons.local_activity_rounded;
-      case ActivityCategory.flight:
-        return Icons.flight_takeoff_rounded;
       case ActivityCategory.stay:
         return Icons.hotel_rounded;
       case ActivityCategory.custom:
@@ -79,8 +77,6 @@ class _AttractionsViewState extends ConsumerState<AttractionsView> {
 
   Color _getCategoryColor(ActivityCategory cat) {
     switch (cat) {
-      case ActivityCategory.flight:
-        return AppColors.flight;
       case ActivityCategory.stay:
         return AppColors.stay;
       case ActivityCategory.transport:
@@ -269,16 +265,6 @@ class _AttractionsViewState extends ConsumerState<AttractionsView> {
                             _selectedCategory == ActivityCategory.entertainment
                                 ? null
                                 : ActivityCategory.entertainment),
-                      ),
-                      const SizedBox(width: 8),
-                      FilterChip(
-                        avatar: const Icon(Icons.flight_takeoff_rounded, size: 14),
-                        label: const Text('Flight'),
-                        selected: _selectedCategory == ActivityCategory.flight,
-                        onSelected: (_) => setState(() => _selectedCategory =
-                            _selectedCategory == ActivityCategory.flight
-                                ? null
-                                : ActivityCategory.flight),
                       ),
                       const SizedBox(width: 8),
                       FilterChip(

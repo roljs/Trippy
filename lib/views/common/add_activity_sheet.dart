@@ -14,6 +14,7 @@ class AddActivitySheet extends ConsumerStatefulWidget {
   final ActivityCategory? initialCategory;
   final TimeOfDay? initialStartTime;
   final TimeOfDay? initialEndTime;
+  final String? initialMealType;
 
   const AddActivitySheet({
     super.key,
@@ -23,6 +24,7 @@ class AddActivitySheet extends ConsumerStatefulWidget {
     this.initialCategory,
     this.initialStartTime,
     this.initialEndTime,
+    this.initialMealType,
   });
 
   @override
@@ -32,6 +34,8 @@ class AddActivitySheet extends ConsumerStatefulWidget {
 class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
   final _titleController = TextEditingController();
   final _locationController = TextEditingController();
+  final _fromLocationController = TextEditingController();
+  final _toLocationController = TextEditingController();
   final _confirmationController = TextEditingController();
   final _notesController = TextEditingController();
 
@@ -42,6 +46,22 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
   TimeOfDay? _endTime;
   String? _selectedStayId;
   String? _selectedFlightId;
+  String? _mealType;
+  String? _transportDirection; // 'to_airport' or 'from_airport'
+  String? _fromStayId;
+  String? _toStayId;
+  bool _isFlightTransfer = false;
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _locationController.dispose();
+    _fromLocationController.dispose();
+    _toLocationController.dispose();
+    _confirmationController.dispose();
+    _notesController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -57,6 +77,20 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
       _selectedDate = edit.date;
       _selectedStayId = edit.stayId;
       _selectedFlightId = edit.flightId;
+      _isFlightTransfer = edit.flightId != null;
+      _mealType = edit.mealType;
+      _fromLocationController.text = edit.effectiveFromLocation ?? '';
+      _toLocationController.text = edit.effectiveToLocation ?? '';
+      _transportDirection = edit.transportDirection;
+      if (_transportDirection == null && edit.flightId != null) {
+        if (edit.isToAirport) {
+          _transportDirection = 'to_airport';
+        } else if (edit.isFromAirport) {
+          _transportDirection = 'from_airport';
+        }
+      }
+      _fromStayId = edit.fromStayId;
+      _toStayId = edit.toStayId;
       final startParts = edit.startTime.split(':');
       if (startParts.length >= 2) {
         _startTime = TimeOfDay(
@@ -77,6 +111,17 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
       _titleController.text = widget.initialTitle ?? '';
       _category = widget.initialCategory ?? ActivityCategory.attraction;
       _bookingStatus = BookingStatus.planned;
+      _mealType = widget.initialMealType;
+      if (_mealType == null && widget.initialTitle != null) {
+        final t = widget.initialTitle!.toLowerCase();
+        if (t.contains('breakfast') || t.contains('desayuno')) {
+          _mealType = 'breakfast';
+        } else if (t.contains('lunch') || t.contains('almuerzo')) {
+          _mealType = 'lunch';
+        } else if (t.contains('dinner') || t.contains('cena')) {
+          _mealType = 'dinner';
+        }
+      }
       final activeTrip = ref.read(activeTripProvider);
       _selectedDate = widget.initialDate ?? activeTrip?.startDate ?? DateTime.now();
       if (widget.initialStartTime != null) {
@@ -135,11 +180,18 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
 
   void _applyFlightDepartureTransfer(Flight flight) {
     setState(() {
+      _transportDirection = 'to_airport';
+      _toStayId = null;
+      _toLocationController.text = flight.departureAirport;
       final depAirport = flight.departureAirport;
       final depName = depAirport.contains('(')
           ? depAirport.substring(depAirport.indexOf('(') + 1, depAirport.indexOf(')'))
           : depAirport.split(' ').first;
-      _titleController.text = 'Transport: Hotel to $depName Airport';
+      if (_titleController.text.isEmpty ||
+          _titleController.text.startsWith('Transport:') ||
+          _titleController.text.toLowerCase().contains('airport to hotel')) {
+        _titleController.text = 'Transport: Hotel to $depName Airport';
+      }
       final depTransferTime = flight.departureTime.subtract(const Duration(hours: 2));
       _selectedDate = DateTime(depTransferTime.year, depTransferTime.month, depTransferTime.day);
       _startTime = TimeOfDay(hour: depTransferTime.hour, minute: depTransferTime.minute);
@@ -151,11 +203,18 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
 
   void _applyFlightArrivalTransfer(Flight flight) {
     setState(() {
+      _transportDirection = 'from_airport';
+      _fromStayId = null;
+      _fromLocationController.text = flight.arrivalAirport;
       final arrAirport = flight.arrivalAirport;
       final arrName = arrAirport.contains('(')
           ? arrAirport.substring(arrAirport.indexOf('(') + 1, arrAirport.indexOf(')'))
           : arrAirport.split(' ').first;
-      _titleController.text = 'Transport: $arrName Airport to Hotel';
+      if (_titleController.text.isEmpty ||
+          _titleController.text.startsWith('Transport:') ||
+          _titleController.text.toLowerCase().contains('hotel to')) {
+        _titleController.text = 'Transport: $arrName Airport to Hotel';
+      }
       final arrTransferTime = flight.arrivalTime.add(const Duration(minutes: 45));
       _selectedDate = DateTime(arrTransferTime.year, arrTransferTime.month, arrTransferTime.day);
       _startTime = TimeOfDay(hour: arrTransferTime.hour, minute: arrTransferTime.minute);
@@ -275,6 +334,65 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
               }).toList(),
             ),
             const SizedBox(height: 14),
+
+            // Meal Tag Section (Especially for Food & Dining)
+            if (_category == ActivityCategory.dining) ...[
+              const Text(
+                'Meal Type Tag',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ChoiceChip(
+                    avatar: const Icon(Icons.breakfast_dining_rounded, size: 16),
+                    label: const Text('Breakfast'),
+                    selected: _mealType == 'breakfast',
+                    selectedColor: const Color(0xFFFEF3C7),
+                    onSelected: (val) {
+                      setState(() {
+                        _mealType = val ? 'breakfast' : null;
+                      });
+                    },
+                  ),
+                  ChoiceChip(
+                    avatar: const Icon(Icons.restaurant_rounded, size: 16),
+                    label: const Text('Lunch'),
+                    selected: _mealType == 'lunch',
+                    selectedColor: const Color(0xFFDCFCE7),
+                    onSelected: (val) {
+                      setState(() {
+                        _mealType = val ? 'lunch' : null;
+                      });
+                    },
+                  ),
+                  ChoiceChip(
+                    avatar: const Icon(Icons.dinner_dining_rounded, size: 16),
+                    label: const Text('Dinner'),
+                    selected: _mealType == 'dinner',
+                    selectedColor: const Color(0xFFF3E8FF),
+                    onSelected: (val) {
+                      setState(() {
+                        _mealType = val ? 'dinner' : null;
+                      });
+                    },
+                  ),
+                  if (_mealType != null)
+                    ActionChip(
+                      avatar: const Icon(Icons.close_rounded, size: 14),
+                      label: const Text('Clear', style: TextStyle(fontSize: 12)),
+                      onPressed: () {
+                        setState(() {
+                          _mealType = null;
+                        });
+                      },
+                    ),
+                ],
+              ),
+              const SizedBox(height: 14),
+            ],
 
             // Stay linking section if category is Stay
             if (_category == ActivityCategory.stay) ...[
@@ -453,164 +571,7 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
               const SizedBox(height: 14),
             ],
 
-            // 2. Flight Linking Card (Available when Transport category is selected or linking to a flight)
-            if (_category == ActivityCategory.transport && availableFlights.isNotEmpty) ...[
-              Container(
-                margin: const EdgeInsets.only(bottom: 14),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.transportContainer.withValues(alpha: 0.25),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.transport.withValues(alpha: 0.4)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.flight_takeoff_rounded, size: 16, color: AppColors.transport),
-                        SizedBox(width: 6),
-                        Text(
-                          'Link to Flight (Airport Ground Transfer)',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.transport,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String?>(
-                      key: ValueKey(_selectedFlightId),
-                      initialValue: _selectedFlightId,
-                      decoration: const InputDecoration(
-                        labelText: 'Select Flight',
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        filled: true,
-                        fillColor: Colors.white,
-                      ),
-                      items: [
-                        const DropdownMenuItem<String?>(
-                          value: null,
-                          child: Text('None (Unlinked)', style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
-                        ),
-                        ...availableFlights.map((f) {
-                          return DropdownMenuItem<String?>(
-                            value: f.id,
-                            child: Text(
-                              '${f.flightNumber} (${f.airline}) • ${f.departureAirport.split(' ').first} -> ${f.arrivalAirport.split(' ').first}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 13),
-                            ),
-                          );
-                        }),
-                      ],
-                      onChanged: (flightId) {
-                        setState(() {
-                          _selectedFlightId = flightId;
-                          if (flightId != null) {
-                            final f = availableFlights.firstWhere((x) => x.id == flightId);
-                            _applyFlightDepartureTransfer(f);
-                          }
-                        });
-                      },
-                    ),
-                    if (currentSelectedFlight != null) ...[
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () => _applyFlightDepartureTransfer(currentSelectedFlight!),
-                              icon: const Icon(Icons.flight_takeoff_rounded, size: 14),
-                              label: const Text('Quick: To Airport', style: TextStyle(fontSize: 12)),
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 6),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () => _applyFlightArrivalTransfer(currentSelectedFlight!),
-                              icon: const Icon(Icons.flight_land_rounded, size: 14),
-                              label: const Text('Quick: From Airport', style: TextStyle(fontSize: 12)),
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 6),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.grey.shade200),
-                          ),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(8),
-                            onTap: () {
-                              Navigator.pop(context);
-                              showModalBottomSheet(
-                                context: context,
-                                isScrollControlled: true,
-                                backgroundColor: Colors.transparent,
-                                builder: (ctx) => AddFlightSheet(flightToEdit: currentSelectedFlight),
-                              );
-                            },
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              '${currentSelectedFlight.flightNumber} (${currentSelectedFlight.airline})',
-                                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-                                            ),
-                                          ),
-                                          const Text(
-                                            'View Flight',
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w700,
-                                              color: AppColors.flight,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 4),
-                                          const Icon(Icons.arrow_forward_ios_rounded, size: 10, color: AppColors.flight),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        '${currentSelectedFlight.departureAirport} → ${currentSelectedFlight.arrivalAirport}',
-                                        style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        'Departs: ${DateFormatters.shortDate.format(currentSelectedFlight.departureTime)} ${DateFormatters.time12.format(currentSelectedFlight.departureTime)}',
-                                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
+
 
             // Date selector
             const Text(
@@ -704,15 +665,296 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
             ),
             const SizedBox(height: 14),
 
-            // Location
-            TextField(
-              controller: _locationController,
-              decoration: const InputDecoration(
-                labelText: 'Location / Address',
-                hintText: 'e.g. Asakusa, Taito City',
-                prefixIcon: Icon(Icons.location_on_outlined, size: 18),
+            // Flight Transfer Toggle & Linking Section (Only for Transport activities)
+            if (_category == ActivityCategory.transport) ...[
+              Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _isFlightTransfer
+                      ? AppColors.transportContainer.withValues(alpha: 0.3)
+                      : Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _isFlightTransfer
+                        ? AppColors.transport.withValues(alpha: 0.4)
+                        : Colors.grey.shade200,
+                  ),
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: const Text(
+                      'Flight Transfer',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    subtitle: const Text(
+                      'Link this ground transport to an airline flight',
+                      style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                    ),
+                    secondary: Icon(
+                      Icons.flight_takeoff_rounded,
+                      color: _isFlightTransfer ? AppColors.transport : AppColors.textMuted,
+                      size: 20,
+                    ),
+                    value: _isFlightTransfer,
+                    onChanged: (val) {
+                      setState(() {
+                        _isFlightTransfer = val;
+                        if (!val) {
+                          _selectedFlightId = null;
+                          _transportDirection = null;
+                        }
+                      });
+                    },
+                  ),
+                ),
               ),
-            ),
+
+              // Link to Flight Details (Only displayed when toggle is selected)
+              if (_isFlightTransfer) ...[
+                if (availableFlights.isEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 14),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.amber.shade200),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 16, color: Color(0xFFD97706)),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'No flights exist in this trip yet. Add a flight booking first to link it.',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF92400E)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 14),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.transportContainer.withValues(alpha: 0.25),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.transport.withValues(alpha: 0.4)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.flight_takeoff_rounded, size: 16, color: AppColors.transport),
+                            SizedBox(width: 6),
+                            Text(
+                              'Link to Flight (Airport Ground Transfer)',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.transport,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<String?>(
+                          key: ValueKey(_selectedFlightId),
+                          initialValue: _selectedFlightId,
+                          decoration: const InputDecoration(
+                            labelText: 'Select Flight',
+                            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            filled: true,
+                            fillColor: Colors.white,
+                          ),
+                          items: [
+                            const DropdownMenuItem<String?>(
+                              value: null,
+                              child: Text('None (Unlinked)', style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
+                            ),
+                            ...availableFlights.map((f) {
+                              return DropdownMenuItem<String?>(
+                                value: f.id,
+                                child: Text(
+                                  '${f.flightNumber} (${f.airline}) • ${f.departureAirport.split(' ').first} -> ${f.arrivalAirport.split(' ').first}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                              );
+                            }),
+                          ],
+                          onChanged: (flightId) {
+                            setState(() {
+                              _selectedFlightId = flightId;
+                              if (flightId != null) {
+                                final f = availableFlights.firstWhere((x) => x.id == flightId);
+                                _transportDirection = 'to_airport';
+                                _applyFlightDepartureTransfer(f);
+                              } else {
+                                _transportDirection = null;
+                              }
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: currentSelectedFlight == null
+                                    ? null
+                                    : () {
+                                        setState(() {
+                                          _transportDirection = 'to_airport';
+                                          _applyFlightDepartureTransfer(currentSelectedFlight!);
+                                        });
+                                      },
+                                icon: const Icon(Icons.flight_takeoff_rounded, size: 14),
+                                label: const Text('To Airport', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                                style: OutlinedButton.styleFrom(
+                                  backgroundColor: _transportDirection == 'to_airport'
+                                      ? AppColors.primary
+                                      : (currentSelectedFlight == null ? Colors.grey.shade100 : Colors.white),
+                                  foregroundColor: _transportDirection == 'to_airport'
+                                      ? Colors.white
+                                      : (_selectedFlightId != null ? AppColors.textPrimary : AppColors.textMuted),
+                                  side: BorderSide(
+                                    color: _transportDirection == 'to_airport'
+                                        ? AppColors.primary
+                                        : Colors.grey.shade300,
+                                  ),
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: currentSelectedFlight == null
+                                    ? null
+                                    : () {
+                                        setState(() {
+                                          _transportDirection = 'from_airport';
+                                          _applyFlightArrivalTransfer(currentSelectedFlight!);
+                                        });
+                                      },
+                                icon: const Icon(Icons.flight_land_rounded, size: 14),
+                                label: const Text('From Airport', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                                style: OutlinedButton.styleFrom(
+                                  backgroundColor: _transportDirection == 'from_airport'
+                                      ? AppColors.primary
+                                      : (currentSelectedFlight == null ? Colors.grey.shade100 : Colors.white),
+                                  foregroundColor: _transportDirection == 'from_airport'
+                                      ? Colors.white
+                                      : (_selectedFlightId != null ? AppColors.textPrimary : AppColors.textMuted),
+                                  side: BorderSide(
+                                    color: _transportDirection == 'from_airport'
+                                        ? AppColors.primary
+                                        : Colors.grey.shade300,
+                                  ),
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (currentSelectedFlight == null) ...[
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Select a flight above to enable airport transfer tagging',
+                            style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+                          ),
+                        ],
+                        if (currentSelectedFlight != null) ...[
+                          const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.grey.shade200),
+                            ),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(8),
+                              onTap: () {
+                                Navigator.pop(context);
+                                showModalBottomSheet(
+                                  context: context,
+                                  isScrollControlled: true,
+                                  backgroundColor: Colors.transparent,
+                                  builder: (ctx) => AddFlightSheet(flightToEdit: currentSelectedFlight),
+                                );
+                              },
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                '${currentSelectedFlight.flightNumber} (${currentSelectedFlight.airline})',
+                                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                                              ),
+                                            ),
+                                            const Text(
+                                              'View Flight',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w700,
+                                                color: AppColors.flight,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            const Icon(Icons.arrow_forward_ios_rounded, size: 10, color: AppColors.flight),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          '${currentSelectedFlight.departureAirport} → ${currentSelectedFlight.arrivalAirport}',
+                                          style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Departs: ${DateFormatters.shortDate.format(currentSelectedFlight.departureTime)} ${DateFormatters.time12.format(currentSelectedFlight.departureTime)}',
+                                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+              ],
+            ],
+
+            // Location
+            if (_category == ActivityCategory.transport) ...[
+              _buildTransportLocationSection(
+                availableStays,
+                _isFlightTransfer ? currentSelectedFlight : null,
+              ),
+            ] else ...[
+              _buildStandardLocationSection(currentSelectedStay),
+            ],
             const SizedBox(height: 14),
 
             // Booking Status
@@ -765,10 +1007,50 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
                 if (isEditing) ...[
                   IconButton(
                     icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    tooltip: 'Delete Activity',
                     onPressed: () async {
-                      await repo.deleteActivity(
-                          activeTrip.id, widget.activityToEdit!.id);
-                      if (context.mounted) Navigator.pop(context);
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Delete Activity'),
+                          content: Text(
+                              'Are you sure you want to permanently delete "${widget.activityToEdit!.title}"?'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              child: const Text('Cancel'),
+                            ),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red),
+                              onPressed: () => Navigator.pop(ctx, true),
+                              child: const Text('Delete',
+                                  style: TextStyle(color: Colors.white)),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirm == true) {
+                        final actId = widget.activityToEdit!.id;
+                        final stays = ref.read(activeTripStaysProvider).value ?? [];
+                        for (final s in stays) {
+                          if (s.linkedActivityIds.contains(actId)) {
+                            await repo.updateStay(s.copyWith(
+                              linkedActivityIds: s.linkedActivityIds.where((id) => id != actId).toList(),
+                            ));
+                          }
+                        }
+                        final flights = ref.read(activeTripFlightsProvider).value ?? [];
+                        for (final f in flights) {
+                          if (f.linkedActivityIds.contains(actId)) {
+                            await repo.updateFlight(f.copyWith(
+                              linkedActivityIds: f.linkedActivityIds.where((id) => id != actId).toList(),
+                            ));
+                          }
+                        }
+                        await repo.deleteActivity(activeTrip.id, actId);
+                        if (context.mounted) Navigator.pop(context);
+                      }
                     },
                   ),
                   const SizedBox(width: 8),
@@ -778,6 +1060,25 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
                     onPressed: () async {
                       final title = _titleController.text.trim();
                       if (title.isEmpty) return;
+
+                      final fromLoc = _fromLocationController.text.trim();
+                      final toLoc = _toLocationController.text.trim();
+                      final String? compositeLocation;
+                      if (_category == ActivityCategory.transport) {
+                        if (fromLoc.isNotEmpty && toLoc.isNotEmpty) {
+                          compositeLocation = '$fromLoc → $toLoc';
+                        } else if (toLoc.isNotEmpty) {
+                          compositeLocation = toLoc;
+                        } else if (fromLoc.isNotEmpty) {
+                          compositeLocation = fromLoc;
+                        } else {
+                          compositeLocation = null;
+                        }
+                      } else {
+                        compositeLocation = _locationController.text.trim().isEmpty
+                            ? null
+                            : _locationController.text.trim();
+                      }
 
                       final activity = Activity(
                         id: widget.activityToEdit?.id ??
@@ -790,9 +1091,14 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
                             : null,
                         title: title,
                         category: _category,
-                        location: _locationController.text.trim().isEmpty
-                            ? null
-                            : _locationController.text.trim(),
+                        location: compositeLocation,
+                        fromLocation: _category == ActivityCategory.transport && fromLoc.isNotEmpty ? fromLoc : null,
+                        toLocation: _category == ActivityCategory.transport && toLoc.isNotEmpty ? toLoc : null,
+                        transportDirection: _category == ActivityCategory.transport && _isFlightTransfer && _selectedFlightId != null
+                            ? _transportDirection
+                            : null,
+                        fromStayId: _category == ActivityCategory.transport ? _fromStayId : null,
+                        toStayId: _category == ActivityCategory.transport ? _toStayId : null,
                         bookingStatus: _bookingStatus,
                         confirmationRef:
                             _confirmationController.text.trim().isEmpty
@@ -802,7 +1108,8 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
                             ? null
                             : _notesController.text.trim(),
                         stayId: _category == ActivityCategory.stay ? _selectedStayId : null,
-                        flightId: _category == ActivityCategory.transport ? _selectedFlightId : null,
+                        flightId: _category == ActivityCategory.transport && _isFlightTransfer ? _selectedFlightId : null,
+                        mealType: _mealType,
                       );
 
                       if (isEditing) {
@@ -812,7 +1119,7 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
                       }
 
                       // Manage reciprocal link on Flight side
-                      final targetFlightId = _category == ActivityCategory.transport ? _selectedFlightId : null;
+                      final targetFlightId = _category == ActivityCategory.transport && _isFlightTransfer ? _selectedFlightId : null;
                       final prevFlightId = widget.activityToEdit?.flightId;
 
                       if (targetFlightId != null) {
@@ -864,6 +1171,292 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildTransportLocationSection(
+    List<Stay> availableStays,
+    Flight? currentSelectedFlight,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Transport Route Locations',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 6),
+        _buildFromLocationField(availableStays, currentSelectedFlight),
+        const SizedBox(height: 10),
+        _buildToLocationField(availableStays, currentSelectedFlight),
+      ],
+    );
+  }
+
+  Widget _buildFromLocationField(
+    List<Stay> availableStays,
+    Flight? currentSelectedFlight,
+  ) {
+    // 1. If a stay is selected as "From" location
+    if (_fromStayId != null) {
+      final stay = availableStays.where((s) => s.id == _fromStayId).firstOrNull;
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.stayContainer.withValues(alpha: 0.25),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.stay.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.hotel_rounded, size: 18, color: AppColors.stay),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Text(
+                        'FROM: ',
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: AppColors.stay),
+                      ),
+                      Expanded(
+                        child: Text(
+                          stay?.name ?? 'Hotel / Stay',
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (stay?.address != null && stay!.address!.isNotEmpty)
+                    Text(
+                      stay.address!,
+                      style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                ],
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  _fromStayId = null;
+                  _fromLocationController.clear();
+                });
+              },
+              child: const Text('Change', style: TextStyle(fontSize: 12)),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // 2. If transport direction is "From Airport" with a linked flight
+    if (_transportDirection == 'from_airport' && currentSelectedFlight != null) {
+      return TextFormField(
+        controller: _fromLocationController,
+        readOnly: true,
+        decoration: InputDecoration(
+          labelText: 'From (Arrival Airport)',
+          prefixIcon: const Icon(Icons.flight_land_rounded, size: 18, color: AppColors.transport),
+          helperText: 'Read-only: set automatically to arrival airport of linked flight',
+          filled: true,
+          fillColor: Colors.grey.shade50,
+        ),
+      );
+    }
+
+    // 3. User can enter location or pick a stay
+    return TextField(
+      controller: _fromLocationController,
+      decoration: InputDecoration(
+        labelText: 'From (Location / Address)',
+        hintText: 'e.g. Hotel, Home, or City Center',
+        prefixIcon: const Icon(Icons.trip_origin_rounded, size: 18),
+        suffixIcon: availableStays.isNotEmpty
+            ? PopupMenuButton<Stay>(
+                tooltip: 'Select Stay as From Location',
+                icon: const Icon(Icons.hotel_rounded, size: 18, color: AppColors.stay),
+                itemBuilder: (ctx) => [
+                  for (final stay in availableStays)
+                    PopupMenuItem<Stay>(
+                      value: stay,
+                      child: Row(
+                        children: [
+                          const Icon(Icons.hotel_rounded, size: 14, color: AppColors.stay),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '${stay.name}${stay.address != null ? " (${stay.address})" : ""}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+                onSelected: (stay) {
+                  setState(() {
+                    _fromStayId = stay.id;
+                    _fromLocationController.text = '${stay.name}${stay.address != null ? ", ${stay.address}" : ""}';
+                  });
+                },
+              )
+            : null,
+      ),
+    );
+  }
+
+  Widget _buildToLocationField(
+    List<Stay> availableStays,
+    Flight? currentSelectedFlight,
+  ) {
+    // 1. If a stay is selected as "To" location
+    if (_toStayId != null) {
+      final stay = availableStays.where((s) => s.id == _toStayId).firstOrNull;
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.stayContainer.withValues(alpha: 0.25),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.stay.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.hotel_rounded, size: 18, color: AppColors.stay),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Text(
+                        'TO: ',
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: AppColors.stay),
+                      ),
+                      Expanded(
+                        child: Text(
+                          stay?.name ?? 'Hotel / Stay',
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (stay?.address != null && stay!.address!.isNotEmpty)
+                    Text(
+                      stay.address!,
+                      style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                ],
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  _toStayId = null;
+                  _toLocationController.clear();
+                });
+              },
+              child: const Text('Change', style: TextStyle(fontSize: 12)),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // 2. If transport direction is "To Airport" with a linked flight
+    if (_transportDirection == 'to_airport' && currentSelectedFlight != null) {
+      return TextFormField(
+        controller: _toLocationController,
+        readOnly: true,
+        decoration: InputDecoration(
+          labelText: 'To (Departure Airport)',
+          prefixIcon: const Icon(Icons.flight_takeoff_rounded, size: 18, color: AppColors.transport),
+          helperText: 'Read-only: set automatically to departure airport of linked flight',
+          filled: true,
+          fillColor: Colors.grey.shade50,
+        ),
+      );
+    }
+
+    // 3. User can enter location or pick a stay
+    return TextField(
+      controller: _toLocationController,
+      decoration: InputDecoration(
+        labelText: 'To (Location / Address)',
+        hintText: 'e.g. Hotel, Airport, or Station',
+        prefixIcon: const Icon(Icons.place_outlined, size: 18),
+        suffixIcon: availableStays.isNotEmpty
+            ? PopupMenuButton<Stay>(
+                tooltip: 'Select Stay as To Location',
+                icon: const Icon(Icons.hotel_rounded, size: 18, color: AppColors.stay),
+                itemBuilder: (ctx) => [
+                  for (final stay in availableStays)
+                    PopupMenuItem<Stay>(
+                      value: stay,
+                      child: Row(
+                        children: [
+                          const Icon(Icons.hotel_rounded, size: 14, color: AppColors.stay),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '${stay.name}${stay.address != null ? " (${stay.address})" : ""}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+                onSelected: (stay) {
+                  setState(() {
+                    _toStayId = stay.id;
+                    _toLocationController.text = '${stay.name}${stay.address != null ? ", ${stay.address}" : ""}';
+                  });
+                },
+              )
+            : null,
+      ),
+    );
+  }
+
+  Widget _buildStandardLocationSection(Stay? currentSelectedStay) {
+    final isLinkedStay = _category == ActivityCategory.stay && currentSelectedStay != null;
+    if (isLinkedStay) {
+      final hotelAddress = currentSelectedStay.address ?? currentSelectedStay.name;
+      if (_locationController.text != hotelAddress) {
+        _locationController.text = hotelAddress;
+      }
+    }
+
+    return TextField(
+      controller: _locationController,
+      readOnly: isLinkedStay,
+      decoration: InputDecoration(
+        labelText: isLinkedStay ? 'Location / Address (Linked Stay)' : 'Location / Address',
+        hintText: 'e.g. Asakusa, Taito City',
+        prefixIcon: Icon(
+          isLinkedStay ? Icons.hotel_rounded : Icons.location_on_outlined,
+          size: 18,
+          color: isLinkedStay ? AppColors.stay : null,
+        ),
+        helperText: isLinkedStay
+            ? 'Read-only: set automatically from linked stay "${currentSelectedStay.name}"'
+            : null,
+        filled: isLinkedStay,
+        fillColor: isLinkedStay ? Colors.grey.shade50 : null,
       ),
     );
   }

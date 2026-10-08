@@ -435,7 +435,7 @@ class _AddStaySheetState extends ConsumerState<AddStaySheet> {
                                 if (widget.stayToEdit != null) ...[
                                   const SizedBox(width: 4),
                                   IconButton(
-                                    icon: const Icon(Icons.link_off_rounded, size: 16, color: Colors.red),
+                                    icon: Icon(Icons.link_off_rounded, size: 16, color: Colors.amber.shade800),
                                     tooltip: 'Unlink Activity',
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints(),
@@ -443,6 +443,38 @@ class _AddStaySheetState extends ConsumerState<AddStaySheet> {
                                       final remainingIds = widget.stayToEdit!.linkedActivityIds.where((id) => id != act.id).toList();
                                       await repo.updateStay(widget.stayToEdit!.copyWith(linkedActivityIds: remainingIds));
                                       await repo.updateActivity(act.copyWith(stayId: null));
+                                    },
+                                  ),
+                                  const SizedBox(width: 4),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline, size: 16, color: Colors.red),
+                                    tooltip: 'Delete Activity',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    onPressed: () async {
+                                      final confirm = await showDialog<bool>(
+                                        context: context,
+                                        builder: (ctx) => AlertDialog(
+                                          title: const Text('Delete Activity'),
+                                          content: Text('Are you sure you want to permanently delete "${act.title}"?'),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () => Navigator.pop(ctx, false),
+                                              child: const Text('Cancel'),
+                                            ),
+                                            ElevatedButton(
+                                              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                                              onPressed: () => Navigator.pop(ctx, true),
+                                              child: const Text('Delete', style: TextStyle(color: Colors.white)),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                      if (confirm == true) {
+                                        final remainingIds = widget.stayToEdit!.linkedActivityIds.where((id) => id != act.id).toList();
+                                        await repo.updateStay(widget.stayToEdit!.copyWith(linkedActivityIds: remainingIds));
+                                        await repo.deleteActivity(activeTrip.id, act.id);
+                                      }
                                     },
                                   ),
                                 ],
@@ -457,8 +489,8 @@ class _AddStaySheetState extends ConsumerState<AddStaySheet> {
               ),
             ],
 
-            // Option to auto-create / sync check-in and check-out activities
-            if (!isOvernightFlight) ...[
+            // Option to auto-create check-in and check-out activities when adding a new stay
+            if (!isEditing && !isOvernightFlight) ...[
               Container(
                 margin: const EdgeInsets.only(bottom: 16),
                 decoration: BoxDecoration(
@@ -478,18 +510,12 @@ class _AddStaySheetState extends ConsumerState<AddStaySheet> {
                     value: _createCheckInOutActivities,
                     activeColor: AppColors.stay,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    title: Text(
-                      (hasLinkedCheckIn && hasLinkedCheckOut)
-                          ? 'Sync linked Check-in & Check-out activities'
-                          : (hasLinkedCheckIn || hasLinkedCheckOut)
-                              ? 'Update linked activity & create missing check-in/out'
-                              : 'Automatically create Check-in & Check-out activities',
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                    title: const Text(
+                      'Automatically create Check-in & Check-out activities',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
                     ),
                     subtitle: Text(
-                      (hasLinkedCheckIn && hasLinkedCheckOut)
-                          ? 'Keeps linked activities in sync with Check-in (${DateFormatters.shortDate.format(_checkInDate)} at $_checkInTime) and Check-out (${DateFormatters.shortDate.format(_checkOutDate)} at $_checkOutTime) without duplicates'
-                          : 'Schedules Check-in on ${DateFormatters.shortDate.format(_checkInDate)} at $_checkInTime, and Check-out on ${DateFormatters.shortDate.format(_checkOutDate)} at $_checkOutTime',
+                      'Schedules Check-in on ${DateFormatters.shortDate.format(_checkInDate)} at $_checkInTime, and Check-out on ${DateFormatters.shortDate.format(_checkOutDate)} at $_checkOutTime',
                       style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
                     ),
                     onChanged: (val) {
@@ -583,8 +609,8 @@ class _AddStaySheetState extends ConsumerState<AddStaySheet> {
                       final initialLinkedActivityIds =
                           List<String>.from(widget.stayToEdit?.linkedActivityIds ?? []);
 
-                      if (_createCheckInOutActivities && !isOvernightFlight) {
-                        // 1. Check-In: update existing or create new without duplicates
+                      if (!isOvernightFlight) {
+                        // 1. Check-In: update existing (always synced) or create new (when adding new stay)
                         if (checkInActs.isNotEmpty) {
                           final existingCheckIn = checkInActs.first;
                           await repo.updateActivity(existingCheckIn.copyWith(
@@ -606,7 +632,7 @@ class _AddStaySheetState extends ConsumerState<AddStaySheet> {
                           if (!initialLinkedActivityIds.contains(existingCheckIn.id)) {
                             initialLinkedActivityIds.add(existingCheckIn.id);
                           }
-                        } else {
+                        } else if (!isEditing && _createCheckInOutActivities) {
                           final inActId = 'act_${DateTime.now().millisecondsSinceEpoch}_in';
                           final checkInAct = Activity(
                             id: inActId,
@@ -633,7 +659,7 @@ class _AddStaySheetState extends ConsumerState<AddStaySheet> {
                           }
                         }
 
-                        // 2. Check-Out: update existing or create new without duplicates
+                        // 2. Check-Out: update existing (always synced) or create new (when adding new stay)
                         if (checkOutActs.isNotEmpty) {
                           final existingCheckOut = checkOutActs.first;
                           await repo.updateActivity(existingCheckOut.copyWith(
@@ -655,7 +681,7 @@ class _AddStaySheetState extends ConsumerState<AddStaySheet> {
                           if (!initialLinkedActivityIds.contains(existingCheckOut.id)) {
                             initialLinkedActivityIds.add(existingCheckOut.id);
                           }
-                        } else {
+                        } else if (!isEditing && _createCheckInOutActivities) {
                           final outActId = 'act_${DateTime.now().millisecondsSinceEpoch + 1}_out';
                           final checkOutAct = Activity(
                             id: outActId,

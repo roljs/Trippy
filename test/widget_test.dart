@@ -25,7 +25,12 @@ void main() {
     // Verify top bar and bottom nav exist
     expect(find.text('Japan Odyssey: Tokyo & Kyoto'), findsOneWidget);
     expect(find.text('Day Planner'), findsOneWidget);
-    expect(find.text('Itinerary'), findsOneWidget);
+    expect(
+        find.descendant(
+          of: find.byType(BottomNavigationBar),
+          matching: find.text('Itinerary'),
+        ),
+        findsOneWidget);
     expect(find.text('Flights'), findsOneWidget);
     expect(find.text('Stays'), findsOneWidget);
     expect(find.text('Activities'), findsOneWidget);
@@ -35,7 +40,10 @@ void main() {
     expect(find.byType(DayPlannerView), findsOneWidget);
 
     // Switch to Itinerary tab
-    await tester.tap(find.text('Itinerary'));
+    await tester.tap(find.descendant(
+      of: find.byType(BottomNavigationBar),
+      matching: find.text('Itinerary'),
+    ));
     await tester.pumpAndSettle();
 
     // Verify day columns and stay bridges render

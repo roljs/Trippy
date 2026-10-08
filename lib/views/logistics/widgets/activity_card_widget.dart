@@ -17,8 +17,6 @@ class ActivityCardWidget extends StatelessWidget {
 
   Color _getCategoryColor(ActivityCategory cat) {
     switch (cat) {
-      case ActivityCategory.flight:
-        return AppColors.flight;
       case ActivityCategory.stay:
         return AppColors.stay;
       case ActivityCategory.transport:
@@ -35,8 +33,6 @@ class ActivityCardWidget extends StatelessWidget {
 
   Color _getCategoryContainerColor(ActivityCategory cat) {
     switch (cat) {
-      case ActivityCategory.flight:
-        return AppColors.flightContainer;
       case ActivityCategory.stay:
         return AppColors.stayContainer;
       case ActivityCategory.transport:
@@ -53,8 +49,6 @@ class ActivityCardWidget extends StatelessWidget {
 
   IconData _getCategoryIcon(ActivityCategory cat) {
     switch (cat) {
-      case ActivityCategory.flight:
-        return Icons.flight_takeoff_rounded;
       case ActivityCategory.stay:
         return Icons.hotel_rounded;
       case ActivityCategory.transport:
@@ -108,8 +102,11 @@ class ActivityCardWidget extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Flexible(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
                     children: [
                       Container(
                         padding:
@@ -155,7 +152,26 @@ class ActivityCardWidget extends StatelessWidget {
                     ],
                   ),
                 ),
+              ),
                 const SizedBox(width: 4),
+                if (activity.mealType != null) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.diningContainer,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      activity.mealType!.toUpperCase(),
+                      style: const TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.dining,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                ],
                 // Booking Status Badge
                 _BookingStatusPill(status: activity.bookingStatus),
               ],

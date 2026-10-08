@@ -39,6 +39,8 @@ class LocationInferenceHelper {
     // USA
     'usa': 'United States',
     'united states': 'United States',
+    'seattle': 'United States',
+    'sea': 'United States',
     'san francisco': 'United States',
     'sfo': 'United States',
     'new york': 'United States',
@@ -124,10 +126,13 @@ class LocationInferenceHelper {
       if (f.arrivalTime.isBefore(endOfDay) || f.arrivalTime.isAtSameMomentAs(endOfDay)) {
         candidateEvents.add((time: f.arrivalTime, destinationText: f.arrivalAirport));
       }
+      if (f.departureTime.isBefore(endOfDay) || f.departureTime.isAtSameMomentAs(endOfDay)) {
+        candidateEvents.add((time: f.departureTime, destinationText: f.departureAirport));
+      }
     }
 
     for (final a in activities) {
-      if (a.category == ActivityCategory.transport || a.category == ActivityCategory.flight) {
+      if (a.category == ActivityCategory.transport) {
         final actDate = a.date;
         if (actDate.isBefore(endOfDay) || actDate.isAtSameMomentAs(endOfDay)) {
           final text = a.location ?? a.title;

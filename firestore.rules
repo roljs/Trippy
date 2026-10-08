@@ -1,0 +1,376 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: trips
+// Document ID: {tripId} (e.g. trip_japan_2026 or auto-generated UUID)
+// Fields:
+//   - id: string (required, 1-100 chars) - unique trip identifier
+//   - title: string (required, 1-200 chars) - display title of the trip
+//   - destination: string (required, 1-200 chars) - primary destination(s)
+//   - startDate: string or timestamp (required) - start date of the trip
+//   - endDate: string or timestamp (required) - end date of the trip
+//   - coverImageUrl: string (optional, URL, <= 1000 chars) - cover banner image
+//   - ownerId: string (required, 1-128 chars, immutable for non-owners) - creator user UID
+//   - inviteCode: string (required, 4-20 chars) - alphanumeric join code
+//   - defaultInviteRole: string (required, 'editor' or 'viewer') - role given on join
+//   - members: map (required, userId -> 'owner' | 'editor' | 'viewer')
+//   - memberIds: list of strings (optional, <= 100 items) - indexed user UIDs for queries
+//   - dayLocations: map (optional, date string -> list of location strings)
+//   - startLocation: string (optional, <= 200 chars) - trip origin city
+//   - endLocation: string (optional, <= 200 chars) - trip return city
+//   - createdAt: string or timestamp (required, immutable)
+//   - updatedAt: string or timestamp (required)
+//
+// Collection: trips/{tripId}/stays
+// Document ID: {stayId} (e.g. stay_01 or stay_flight_101)
+// Fields:
+//   - id: string (required, 1-100 chars)
+//   - tripId: string (required, matches parent {tripId})
+//   - type: string (required: 'hotel', 'rental', 'overnightFlight', 'nightTrain')
+//   - name: string (required, 1-200 chars)
+//   - address: string (optional, <= 500 chars)
+//   - checkInDate: string or timestamp (required)
+//   - checkInTime: string (optional, <= 20 chars)
+//   - checkOutDate: string or timestamp (required)
+//   - checkOutTime: string (optional, <= 20 chars)
+//   - confirmationCode: string (optional, <= 100 chars)
+//   - notes: string (optional, <= 2000 chars)
+//   - overnightFlight: map (optional flight backing overnight stay)
+//   - linkedActivityIds: list of strings (optional, <= 100 items)
+//
+// Collection: trips/{tripId}/flights
+// Document ID: {flightId} (e.g. fl_01)
+// Fields:
+//   - id: string (required, 1-100 chars)
+//   - tripId: string (required, matches parent {tripId})
+//   - airline: string (required, 1-100 chars)
+//   - flightNumber: string (required, 1-50 chars)
+//   - departureAirport: string (required, 1-100 chars)
+//   - arrivalAirport: string (required, 1-100 chars)
+//   - departureTime: string or timestamp (required)
+//   - arrivalTime: string or timestamp (required)
+//   - isOvernight: bool (required)
+//   - isNightStay: bool (required)
+//   - isMainArrival: bool (required)
+//   - isMainDeparture: bool (required)
+//   - terminal: string (optional, <= 50 chars)
+//   - gate: string (optional, <= 50 chars)
+//   - seat: string (optional, <= 50 chars)
+//   - bookingRef: string (optional, <= 100 chars)
+//   - notes: string (optional, <= 2000 chars)
+//   - linkedActivityIds: list of strings (optional, <= 100 items)
+//
+// Collection: trips/{tripId}/activities
+// Document ID: {activityId} (e.g. act_101)
+// Fields:
+//   - id: string (required, 1-100 chars)
+//   - tripId: string (required, matches parent {tripId})
+//   - date: string or timestamp (required)
+//   - startTime: string (required, <= 20 chars)
+//   - endTime: string (optional, <= 20 chars)
+//   - title: string (required, 1-200 chars)
+//   - category: string (required: 'attraction', 'dining', 'transport', 'entertainment', 'stay', 'custom')
+//   - location: string (optional, <= 500 chars)
+//   - bookingStatus: string (required: 'planned', 'booked', 'ticketed')
+//   - confirmationRef: string (optional, <= 100 chars)
+//   - ticketUrl: string (optional, <= 1000 chars)
+//   - notes: string (optional, <= 2000 chars)
+//   - cost: number (optional, >= 0)
+//   - isCompleted: bool (required)
+//   - stayId: string (optional, <= 100 chars)
+//   - flightId: string (optional, <= 100 chars)
+//   - mealType: string (optional, <= 50 chars)
+//   - fromLocation: string (optional, <= 500 chars)
+//   - toLocation: string (optional, <= 500 chars)
+//   - transportDirection: string (optional: 'to_airport', 'from_airport')
+//   - fromStayId: string (optional, <= 100 chars)
+//   - toStayId: string (optional, <= 100 chars)
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isValidOptionalString(map, key, maxLen) {
+      return !(key in map) || map[key] == null || (map[key] is string && map[key].size() <= maxLen);
+    }
+
+    function isValidDate(val) {
+      return (val is timestamp) ||
+             (val is string && val.size() >= 10 && val.size() <= 50);
+    }
+
+    function isValidUrl(url) {
+      return url == null || (url is string && (url.matches("^https?://.*") || url.size() == 0));
+    }
+
+    function isValidStringList(listVal, maxItems) {
+      return listVal == null || (listVal is list && listVal.size() <= maxItems);
+    }
+
+    // --- Role-Based Access Helpers ---
+
+    function isDocTripMember(tripData) {
+      return isAuthenticated() && (
+        tripData.ownerId == request.auth.uid ||
+        ('memberIds' in tripData && request.auth.uid in tripData.memberIds) ||
+        ('members' in tripData && request.auth.uid in tripData.members)
+      );
+    }
+
+    function isParentTripMember(tripId) {
+      return isAuthenticated() &&
+             exists(/databases/$(database)/documents/trips/$(tripId)) &&
+             isDocTripMember(get(/databases/$(database)/documents/trips/$(tripId)).data);
+    }
+
+    function isDocTripOwner(tripData) {
+      return isAuthenticated() && tripData.ownerId == request.auth.uid;
+    }
+
+    function canDocEditTrip(tripData) {
+      return isAuthenticated() && (
+        tripData.ownerId == request.auth.uid ||
+        ('members' in tripData &&
+         request.auth.uid in tripData.members &&
+         (tripData.members[request.auth.uid] == 'owner' ||
+          tripData.members[request.auth.uid] == 'editor'))
+      );
+    }
+
+    function canEditParentTrip(tripId) {
+      return isAuthenticated() &&
+             exists(/databases/$(database)/documents/trips/$(tripId)) &&
+             canDocEditTrip(get(/databases/$(database)/documents/trips/$(tripId)).data);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidTrip(data) {
+      let allowed = [
+        'id', 'title', 'destination', 'startDate', 'endDate',
+        'coverImageUrl', 'ownerId', 'inviteCode', 'defaultInviteRole',
+        'members', 'memberIds', 'dayLocations', 'startLocation',
+        'endLocation', 'createdAt', 'updatedAt'
+      ];
+      return data.keys().hasOnly(allowed) &&
+             isValidString(data.id, 1, 100) &&
+             isValidString(data.title, 1, 200) &&
+             isValidString(data.destination, 1, 200) &&
+             isValidDate(data.startDate) &&
+             isValidDate(data.endDate) &&
+             isValidString(data.ownerId, 1, 128) &&
+             isValidString(data.inviteCode, 4, 20) &&
+             data.defaultInviteRole in ['editor', 'viewer'] &&
+             data.members is map &&
+             isValidDate(data.createdAt) &&
+             isValidDate(data.updatedAt) &&
+             (!('coverImageUrl' in data) || isValidUrl(data.coverImageUrl)) &&
+             isValidOptionalString(data, 'startLocation', 200) &&
+             isValidOptionalString(data, 'endLocation', 200) &&
+             (!('memberIds' in data) || isValidStringList(data.memberIds, 100)) &&
+             (!('dayLocations' in data) || data.dayLocations == null || data.dayLocations is map);
+    }
+
+    function isValidStay(data, tripId) {
+      let allowed = [
+        'id', 'tripId', 'type', 'name', 'address', 'checkInDate',
+        'checkInTime', 'checkOutDate', 'checkOutTime', 'confirmationCode',
+        'notes', 'overnightFlight', 'linkedActivityIds'
+      ];
+      return data.keys().hasOnly(allowed) &&
+             isValidString(data.id, 1, 100) &&
+             data.tripId == tripId &&
+             data.type in ['hotel', 'rental', 'overnightFlight', 'nightTrain'] &&
+             isValidString(data.name, 1, 200) &&
+             isValidDate(data.checkInDate) &&
+             isValidDate(data.checkOutDate) &&
+             isValidOptionalString(data, 'address', 500) &&
+             isValidOptionalString(data, 'checkInTime', 20) &&
+             isValidOptionalString(data, 'checkOutTime', 20) &&
+             isValidOptionalString(data, 'confirmationCode', 100) &&
+             isValidOptionalString(data, 'notes', 2000) &&
+             (!('overnightFlight' in data) || data.overnightFlight == null || data.overnightFlight is map) &&
+             (!('linkedActivityIds' in data) || isValidStringList(data.linkedActivityIds, 100));
+    }
+
+    function isValidFlight(data, tripId) {
+      let allowed = [
+        'id', 'tripId', 'airline', 'flightNumber', 'departureAirport',
+        'arrivalAirport', 'departureTime', 'arrivalTime', 'isOvernight',
+        'isNightStay', 'isMainArrival', 'isMainDeparture', 'terminal',
+        'gate', 'seat', 'bookingRef', 'notes', 'linkedActivityIds'
+      ];
+      return data.keys().hasOnly(allowed) &&
+             isValidString(data.id, 1, 100) &&
+             data.tripId == tripId &&
+             isValidString(data.airline, 1, 100) &&
+             isValidString(data.flightNumber, 1, 50) &&
+             isValidString(data.departureAirport, 1, 100) &&
+             isValidString(data.arrivalAirport, 1, 100) &&
+             isValidDate(data.departureTime) &&
+             isValidDate(data.arrivalTime) &&
+             data.isOvernight is bool &&
+             data.isNightStay is bool &&
+             data.isMainArrival is bool &&
+             data.isMainDeparture is bool &&
+             isValidOptionalString(data, 'terminal', 50) &&
+             isValidOptionalString(data, 'gate', 50) &&
+             isValidOptionalString(data, 'seat', 50) &&
+             isValidOptionalString(data, 'bookingRef', 100) &&
+             isValidOptionalString(data, 'notes', 2000) &&
+             (!('linkedActivityIds' in data) || isValidStringList(data.linkedActivityIds, 100));
+    }
+
+    function isValidActivity(data, tripId) {
+      let allowed = [
+        'id', 'tripId', 'date', 'startTime', 'endTime', 'title',
+        'category', 'location', 'bookingStatus', 'confirmationRef',
+        'ticketUrl', 'notes', 'cost', 'isCompleted', 'stayId',
+        'flightId', 'mealType', 'fromLocation', 'toLocation',
+        'transportDirection', 'fromStayId', 'toStayId'
+      ];
+      return data.keys().hasOnly(allowed) &&
+             isValidString(data.id, 1, 100) &&
+             data.tripId == tripId &&
+             isValidDate(data.date) &&
+             isValidString(data.startTime, 1, 20) &&
+             isValidString(data.title, 1, 200) &&
+             data.category in ['attraction', 'dining', 'transport', 'entertainment', 'stay', 'custom'] &&
+             data.bookingStatus in ['planned', 'booked', 'ticketed'] &&
+             data.isCompleted is bool &&
+             isValidOptionalString(data, 'endTime', 20) &&
+             isValidOptionalString(data, 'location', 500) &&
+             isValidOptionalString(data, 'confirmationRef', 100) &&
+             isValidOptionalString(data, 'ticketUrl', 1000) &&
+             isValidOptionalString(data, 'notes', 2000) &&
+             isValidOptionalString(data, 'stayId', 100) &&
+             isValidOptionalString(data, 'flightId', 100) &&
+             isValidOptionalString(data, 'mealType', 50) &&
+             isValidOptionalString(data, 'fromLocation', 500) &&
+             isValidOptionalString(data, 'toLocation', 500) &&
+             isValidOptionalString(data, 'fromStayId', 100) &&
+             isValidOptionalString(data, 'toStayId', 100) &&
+             (!('transportDirection' in data) || data.transportDirection == null || data.transportDirection in ['to_airport', 'from_airport']) &&
+             (!('cost' in data) || data.cost == null || (data.cost is number && data.cost >= 0));
+    }
+
+    // ===============================================================
+    // Collection Rules: Trips
+    // ===============================================================
+
+    match /trips/{tripId} {
+      // Members can read their trips.
+      // Non-members querying via invite code with limit(1) can find the trip to join.
+      allow get: if isAuthenticated() && (
+        resource == null ||
+        isDocTripMember(resource.data) ||
+        ('inviteCode' in resource.data && resource.data.inviteCode.size() > 0)
+      );
+
+      allow list: if isAuthenticated() && (
+        isDocTripMember(resource.data) ||
+        ('limit' in request.query && request.query.limit <= 1 && 'inviteCode' in resource.data)
+      );
+
+      // Creating a trip:
+      // Creator must be authenticated, assign themselves as owner, and provide valid schema.
+      allow create: if isAuthenticated() &&
+        isValidTrip(request.resource.data) &&
+        request.resource.data.ownerId == request.auth.uid &&
+        request.resource.data.members[request.auth.uid] == 'owner';
+
+      // Updating a trip:
+      // 1. Owner: Full edit rights (cannot change trip id or createdAt).
+      // 2. Editor: Can edit itinerary details, locations, and dates (cannot change ownerId, members, inviteCode, or defaultInviteRole).
+      // 3. Joining User: Can add only their own UID to members map with defaultInviteRole.
+      allow update: if isAuthenticated() &&
+        isValidTrip(request.resource.data) &&
+        request.resource.data.id == resource.data.id &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        (
+          // Case 1: Owner updates
+          (
+            isDocTripOwner(resource.data) &&
+            request.resource.data.members[request.resource.data.ownerId] == 'owner'
+          ) ||
+          // Case 2: Existing editor updates trip itinerary/dates
+          (
+            canDocEditTrip(resource.data) &&
+            request.resource.data.ownerId == resource.data.ownerId &&
+            request.resource.data.inviteCode == resource.data.inviteCode &&
+            request.resource.data.defaultInviteRole == resource.data.defaultInviteRole &&
+            request.resource.data.members == resource.data.members
+          ) ||
+          // Case 3: Co-traveler joining with invite code
+          (
+            request.resource.data.ownerId == resource.data.ownerId &&
+            request.resource.data.inviteCode == resource.data.inviteCode &&
+            request.resource.data.defaultInviteRole == resource.data.defaultInviteRole &&
+            request.resource.data.title == resource.data.title &&
+            request.resource.data.destination == resource.data.destination &&
+            request.resource.data.startDate == resource.data.startDate &&
+            request.resource.data.endDate == resource.data.endDate &&
+            !(request.auth.uid in resource.data.members) &&
+            request.resource.data.members[request.auth.uid] == resource.data.defaultInviteRole &&
+            request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([request.auth.uid])
+          )
+        );
+
+      // Only the trip owner can delete the trip
+      allow delete: if isAuthenticated() && isDocTripOwner(resource.data);
+
+      // =============================================================
+      // Subcollection Rules: Stays
+      // =============================================================
+      match /stays/{stayId} {
+        allow read: if isParentTripMember(tripId);
+        allow create: if canEditParentTrip(tripId) && isValidStay(request.resource.data, tripId);
+        allow update: if canEditParentTrip(tripId) && isValidStay(request.resource.data, tripId);
+        allow delete: if canEditParentTrip(tripId);
+      }
+
+      // =============================================================
+      // Subcollection Rules: Flights
+      // =============================================================
+      match /flights/{flightId} {
+        allow read: if isParentTripMember(tripId);
+        allow create: if canEditParentTrip(tripId) && isValidFlight(request.resource.data, tripId);
+        allow update: if canEditParentTrip(tripId) && isValidFlight(request.resource.data, tripId);
+        allow delete: if canEditParentTrip(tripId);
+      }
+
+      // =============================================================
+      // Subcollection Rules: Activities
+      // =============================================================
+      match /activities/{activityId} {
+        allow read: if isParentTripMember(tripId);
+        allow create: if canEditParentTrip(tripId) && isValidActivity(request.resource.data, tripId);
+        allow update: if canEditParentTrip(tripId) && isValidActivity(request.resource.data, tripId);
+        allow delete: if canEditParentTrip(tripId);
+      }
+    }
+
+    // Default deny all other paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -254,9 +254,8 @@ void main() {
 
       expect(find.text('Air France'), findsOneWidget);
       expect(find.text('AF007'), findsOneWidget);
-      expect(find.text('MAIN ARRIVAL'), findsOneWidget);
       expect(find.text('Lufthansa'), findsOneWidget);
-      expect(find.text('NIGHT STAY'), findsOneWidget);
+      expect(find.text('OVERNIGHT'), findsWidgets);
       expect(find.text('Add Flight'), findsOneWidget);
     });
   });

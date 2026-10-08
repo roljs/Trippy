@@ -3,7 +3,6 @@ enum ActivityCategory {
   dining,
   transport,
   entertainment,
-  flight,
   stay,
   custom;
 
@@ -17,8 +16,6 @@ enum ActivityCategory {
         return 'Transport';
       case ActivityCategory.entertainment:
         return 'Entertainment';
-      case ActivityCategory.flight:
-        return 'Flight';
       case ActivityCategory.stay:
         return 'Hotel & Stay';
       case ActivityCategory.custom:
@@ -30,12 +27,11 @@ enum ActivityCategory {
     switch (cat?.toLowerCase()) {
       case 'dining':
         return ActivityCategory.dining;
+      case 'flight':
       case 'transport':
         return ActivityCategory.transport;
       case 'entertainment':
         return ActivityCategory.entertainment;
-      case 'flight':
-        return ActivityCategory.flight;
       case 'stay':
       case 'hotel':
       case 'lodging':
@@ -99,6 +95,12 @@ class Activity {
   final bool isCompleted;
   final String? stayId; // Optional link to a Stay
   final String? flightId; // Optional link to a Flight
+  final String? mealType; // Optional tag: 'breakfast', 'lunch', 'dinner'
+  final String? fromLocation; // For transport: departure place/address
+  final String? toLocation; // For transport: destination place/address
+  final String? transportDirection; // 'to_airport' or 'from_airport'
+  final String? fromStayId; // If from is a linked stay
+  final String? toStayId; // If to is a linked stay
 
   const Activity({
     required this.id,
@@ -117,6 +119,12 @@ class Activity {
     this.isCompleted = false,
     this.stayId,
     this.flightId,
+    this.mealType,
+    this.fromLocation,
+    this.toLocation,
+    this.transportDirection,
+    this.fromStayId,
+    this.toStayId,
   });
 
   /// Combines date and startTime for accurate chronological sorting
@@ -125,6 +133,42 @@ class Activity {
     final hour = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 0 : 0;
     final minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
     return DateTime(date.year, date.month, date.day, hour, minute);
+  }
+
+  /// True if this transport activity is directed to the airport
+  bool get isToAirport =>
+      transportDirection == 'to_airport' ||
+      (transportDirection == null &&
+          flightId != null &&
+          (id.contains('dep_xfer') ||
+              title.toLowerCase().contains('to airport') ||
+              (notes?.toLowerCase().contains('to airport') ?? false)));
+
+  /// True if this transport activity is directed from the airport
+  bool get isFromAirport =>
+      transportDirection == 'from_airport' ||
+      (transportDirection == null &&
+          flightId != null &&
+          (id.contains('arr_xfer') ||
+              title.toLowerCase().contains('from airport') ||
+              (notes?.toLowerCase().contains('from airport') ?? false)));
+
+  /// Effective from location with fallback if stored in location
+  String? get effectiveFromLocation {
+    if (fromLocation != null && fromLocation!.isNotEmpty) return fromLocation;
+    if (category == ActivityCategory.transport && location != null && location!.contains(' → ')) {
+      return location!.split(' → ').first.trim();
+    }
+    return fromLocation;
+  }
+
+  /// Effective to location with fallback if stored in location
+  String? get effectiveToLocation {
+    if (toLocation != null && toLocation!.isNotEmpty) return toLocation;
+    if (category == ActivityCategory.transport && location != null && location!.contains(' → ')) {
+      return location!.split(' → ').last.trim();
+    }
+    return toLocation;
   }
 
   Activity copyWith({
@@ -144,6 +188,12 @@ class Activity {
     bool? isCompleted,
     String? stayId,
     String? flightId,
+    String? mealType,
+    String? fromLocation,
+    String? toLocation,
+    String? transportDirection,
+    String? fromStayId,
+    String? toStayId,
   }) {
     return Activity(
       id: id ?? this.id,
@@ -162,6 +212,12 @@ class Activity {
       isCompleted: isCompleted ?? this.isCompleted,
       stayId: stayId ?? this.stayId,
       flightId: flightId ?? this.flightId,
+      mealType: mealType ?? this.mealType,
+      fromLocation: fromLocation ?? this.fromLocation,
+      toLocation: toLocation ?? this.toLocation,
+      transportDirection: transportDirection ?? this.transportDirection,
+      fromStayId: fromStayId ?? this.fromStayId,
+      toStayId: toStayId ?? this.toStayId,
     );
   }
 
@@ -183,6 +239,12 @@ class Activity {
       'isCompleted': isCompleted,
       if (stayId != null) 'stayId': stayId,
       if (flightId != null) 'flightId': flightId,
+      if (mealType != null) 'mealType': mealType,
+      if (fromLocation != null) 'fromLocation': fromLocation,
+      if (toLocation != null) 'toLocation': toLocation,
+      if (transportDirection != null) 'transportDirection': transportDirection,
+      if (fromStayId != null) 'fromStayId': fromStayId,
+      if (toStayId != null) 'toStayId': toStayId,
     };
   }
 
@@ -204,6 +266,13 @@ class Activity {
       isCompleted: map['isCompleted'] as bool? ?? false,
       stayId: map['stayId'] as String?,
       flightId: map['flightId'] as String?,
+      mealType: map['mealType'] as String?,
+      fromLocation: map['fromLocation'] as String?,
+      toLocation: map['toLocation'] as String?,
+      transportDirection: map['transportDirection'] as String?,
+      fromStayId: map['fromStayId'] as String?,
+      toStayId: map['toStayId'] as String?,
     );
   }
 }
+

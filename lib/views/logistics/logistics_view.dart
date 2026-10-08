@@ -10,6 +10,7 @@ import 'widgets/manage_day_locations_dialog.dart';
 import 'widgets/stay_header_bridge_widget.dart';
 import 'widgets/compact_itinerary_view.dart';
 import 'widgets/map_itinerary_view.dart';
+import 'widgets/calendar_itinerary_view.dart';
 import 'widgets/trip_endcap_stay_bridge_widget.dart';
 import '../../core/utils/city_color_helper.dart';
 import '../../core/utils/location_inference_helper.dart';
@@ -58,24 +59,23 @@ class _LogisticsViewState extends ConsumerState<LogisticsView> {
     super.dispose();
   }
 
-  void _scrollBy(double offset) {
+  void _scrollToDay(int index) {
     if (!_scrollController.hasClients) return;
-    final target = (_scrollController.offset + offset)
-        .clamp(0.0, _scrollController.position.maxScrollExtent);
+    const double totalColumnStride = 310.0;
+    const double canvasLeftOffset = 145.0;
+    final targetOffset = canvasLeftOffset + (index * totalColumnStride);
     _scrollController.animateTo(
-      target,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutCubic,
+      targetOffset.clamp(0.0, _scrollController.position.maxScrollExtent),
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeInOut,
     );
   }
 
-  void _scrollToStart() {
-    if (!_scrollController.hasClients) return;
-    _scrollController.animateTo(
-      0.0,
-      duration: const Duration(milliseconds: 350),
-      curve: Curves.easeOutCubic,
-    );
+  void _navigateToDay(int index, List<DateTime> days) {
+    if (index < 0 || index >= days.length) return;
+    final date = days[index];
+    ref.read(focusedTripDateProvider.notifier).setDate(date);
+    _scrollToDay(index);
   }
 
   int _findDayIndex(List<DateTime> days, DateTime targetDate) {
@@ -209,6 +209,37 @@ class _LogisticsViewState extends ConsumerState<LogisticsView> {
 
     final stays = staysAsync.value ?? [];
 
+    final focusedDate = ref.watch(focusedTripDateProvider);
+    final currentDayIndex = (focusedDate != null && days.isNotEmpty)
+        ? days.indexWhere((d) =>
+            d.year == focusedDate.year &&
+            d.month == focusedDate.month &&
+            d.day == focusedDate.day)
+        : 0;
+    final effectiveDayIndex = currentDayIndex != -1 ? currentDayIndex : 0;
+    final dayNumber = effectiveDayIndex + 1;
+
+    if (focusedDate != null && days.isNotEmpty) {
+      final index = days.indexWhere((d) =>
+          d.year == focusedDate.year &&
+          d.month == focusedDate.month &&
+          d.day == focusedDate.day);
+      if (index != -1) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_scrollController.hasClients) {
+            const double totalColumnStride = 310.0;
+            const double canvasLeftOffset = 145.0;
+            final targetOffset = canvasLeftOffset + (index * totalColumnStride);
+            _scrollController.animateTo(
+              targetOffset.clamp(0.0, _scrollController.position.maxScrollExtent),
+              duration: const Duration(milliseconds: 350),
+              curve: Curves.easeInOut,
+            );
+          }
+        });
+      }
+    }
+
     return LayoutBuilder(
       builder: (context, constraints) {
         // Each column is 290dp with 20dp margin (10dp on each side)
@@ -247,7 +278,13 @@ class _LogisticsViewState extends ConsumerState<LogisticsView> {
           ),
         );
 
-        // 2. Render Stays
+        // 2. Collect Stays and Multi-Day Flights into a single horizontal items list
+        final List<_HorizontalStayItem> horizontalItems = [];
+        final existingFlightStayIds = stays
+            .where((s) => s.overnightFlight != null)
+            .map((s) => s.overnightFlight!.id)
+            .toSet();
+
         for (int k = 0; k < stays.length; k++) {
           final stay = stays[k];
           final inD = DateTime(
@@ -267,54 +304,47 @@ class _LogisticsViewState extends ConsumerState<LogisticsView> {
           final double leftPos = columnCenter(startIndex);
           final double staySpanWidth = nights * totalColumnStride;
           final double rightPos = leftPos + staySpanWidth;
-          if (rightPos > maxStayRight) {
-            maxStayRight = rightPos;
-          }
 
-          // Mark covered night transitions
-          for (int n = startIndex; n < endIndex && n < days.length - 1; n++) {
-            coveredNights.add(n);
-          }
+          final isFlight =
+              stay.type == StayType.overnightFlight || stay.overnightFlight != null;
+          final palette = isFlight
+              ? overnightFlightPalette
+              : CityColorHelper.getStayPalette(
+                  stay: stay,
+                  allStaysInTrip: stays,
+                );
+          final cityName = isFlight && stay.overnightFlight != null
+              ? stay.overnightFlight!.arrivalAirport.split(' ').first
+              : CityColorHelper.extractCityForStay(stay);
+          final onTap = isFlight && stay.overnightFlight != null
+              ? () => _openFlightEdit(context, stay.overnightFlight!)
+              : () => widget.onStayTap?.call(stay);
 
-          // Allocate vertical lane if stays overlap
-          int trackIndex = -1;
-          for (int t = 0; t < trackEndPositions.length; t++) {
-            if (trackEndPositions[t] <= leftPos + 0.5) {
-              trackIndex = t;
-              trackEndPositions[t] = rightPos;
-              break;
-            }
-          }
-          if (trackIndex == -1) {
-            trackIndex = trackEndPositions.length;
-            trackEndPositions.add(rightPos);
-          }
-
-          final palette = CityColorHelper.getStayPalette(
-            stay: stay,
-            allStaysInTrip: stays,
-          );
-
-          stayWidgets.add(
-            Positioned(
+          horizontalItems.add(_HorizontalStayItem(
+            startIndex: startIndex,
+            endIndex: endIndex,
+            leftPos: leftPos,
+            rightPos: rightPos,
+            buildWidget: (trackIndex) => Positioned(
               left: leftPos,
               top: trackIndex * 94.0,
               child: StayHeaderBridgeWidget(
                 stay: stay,
-                cityName: CityColorHelper.extractCityForStay(stay),
+                cityName: cityName,
                 width: staySpanWidth,
                 spanDays: nights,
                 startNightNumber: startIndex + 1,
                 palette: palette,
-                onTap: () => widget.onStayTap?.call(stay),
+                onTap: onTap,
               ),
             ),
-          );
+          ));
         }
 
-        // 3. Render Multi-Day Flights (ONLY flights spanning 2 or more days appear horizontally)
+        // 3. Render Multi-Day Flights (ONLY flights spanning 2 or more days not already present in stays)
         final allFlights = flightsAsync.value ?? [];
         final multiDayFlights = allFlights.where((f) {
+          if (existingFlightStayIds.contains(f.id)) return false;
           final depD = DateTime(
               f.departureTime.year, f.departureTime.month, f.departureTime.day);
           final arrD = DateTime(
@@ -335,27 +365,6 @@ class _LogisticsViewState extends ConsumerState<LogisticsView> {
           final double leftPos = columnCenter(startIdx);
           final double flightSpanWidth = spanDays * totalColumnStride;
           final double rightPos = leftPos + flightSpanWidth;
-          if (rightPos > maxStayRight) {
-            maxStayRight = rightPos;
-          }
-
-          // Mark covered night transitions for multi-day flight
-          for (int n = startIdx; n < endIdx && n < days.length - 1; n++) {
-            coveredNights.add(n);
-          }
-
-          int trackIndex = -1;
-          for (int t = 0; t < trackEndPositions.length; t++) {
-            if (trackEndPositions[t] <= leftPos + 0.5) {
-              trackIndex = t;
-              trackEndPositions[t] = rightPos;
-              break;
-            }
-          }
-          if (trackIndex == -1) {
-            trackIndex = trackEndPositions.length;
-            trackEndPositions.add(rightPos);
-          }
 
           final flightStay = Stay(
             id: 'stay_flight_${flight.id}',
@@ -369,8 +378,12 @@ class _LogisticsViewState extends ConsumerState<LogisticsView> {
             confirmationCode: flight.bookingRef,
           );
 
-          stayWidgets.add(
-            Positioned(
+          horizontalItems.add(_HorizontalStayItem(
+            startIndex: startIdx,
+            endIndex: endIdx,
+            leftPos: leftPos,
+            rightPos: rightPos,
+            buildWidget: (trackIndex) => Positioned(
               left: leftPos,
               top: trackIndex * 94.0,
               child: StayHeaderBridgeWidget(
@@ -383,7 +396,41 @@ class _LogisticsViewState extends ConsumerState<LogisticsView> {
                 onTap: () => _openFlightEdit(context, flight),
               ),
             ),
-          );
+          ));
+        }
+
+        // Sort all horizontal stay & overnight flight items chronologically
+        horizontalItems.sort((a, b) {
+          final cmp = a.startIndex.compareTo(b.startIndex);
+          if (cmp != 0) return cmp;
+          return a.leftPos.compareTo(b.leftPos);
+        });
+
+        // Allocate vertical track lanes in unified chronological order
+        for (final item in horizontalItems) {
+          if (item.rightPos > maxStayRight) {
+            maxStayRight = item.rightPos;
+          }
+
+          // Mark covered night transitions
+          for (int n = item.startIndex; n < item.endIndex && n < days.length - 1; n++) {
+            coveredNights.add(n);
+          }
+
+          int trackIndex = -1;
+          for (int t = 0; t < trackEndPositions.length; t++) {
+            if (trackEndPositions[t] <= item.leftPos + 0.5) {
+              trackIndex = t;
+              trackEndPositions[t] = item.rightPos;
+              break;
+            }
+          }
+          if (trackIndex == -1) {
+            trackIndex = trackEndPositions.length;
+            trackEndPositions.add(item.rightPos);
+          }
+
+          stayWidgets.add(item.buildWidget(trackIndex));
         }
 
         // 4. Add empty slots for any uncovered night transitions
@@ -453,85 +500,96 @@ class _LogisticsViewState extends ConsumerState<LogisticsView> {
             canvasLeftOffset + (days.length * totalColumnStride) + 145.0 + 40.0;
         final double totalCanvasWidth =
             standardWidth > (maxStayRight + 20.0) ? standardWidth : (maxStayRight + 20.0);
-
         final bool isWideScreen = constraints.maxWidth >= 1150;
-        final bool showDateRange = constraints.maxWidth >= 1380;
+        final bool showDateRange = constraints.maxWidth >= 1350;
 
         return Column(
           children: [
             // Top Navigation & Information Bar
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
               child: Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(6),
+                    padding: const EdgeInsets.all(5),
                     decoration: BoxDecoration(
                       color: AppColors.primaryContainer,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Icon(
                       Icons.view_week_rounded,
-                      size: 16,
+                      size: 15,
                       color: AppColors.primary,
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                   Text(
-                    'ITINERARY  •  ${days.length} DAYS',
+                    constraints.maxWidth >= 1350
+                        ? 'ITINERARY  •  ${days.length} DAYS'
+                        : 'ITINERARY',
                     style: const TextStyle(
-                      fontSize: 12,
+                      fontSize: 11.5,
                       fontWeight: FontWeight.w800,
-                      letterSpacing: 0.8,
+                      letterSpacing: 0.6,
                       color: AppColors.textSecondary,
                     ),
                   ),
                   if (showDateRange) ...[
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
                     Text(
                       DateFormatters.formatTripDateRange(
                           trip.startDate, trip.endDate),
                       style: const TextStyle(
-                        fontSize: 12,
+                        fontSize: 11.5,
                         color: AppColors.textMuted,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
                   ],
                   const Spacer(),
-                  // View Switcher: Full View vs Compact View
+                  // View Switcher: Full View vs Compact View vs Map View vs Calendar View
                   SegmentedButton<ItineraryViewMode>(
                     showSelectedIcon: false,
                     segments: [
                       ButtonSegment(
                         value: ItineraryViewMode.full,
-                        icon: const Icon(Icons.view_week_rounded, size: 15),
+                        icon: const Icon(Icons.view_week_rounded, size: 13),
                         label: isWideScreen
                             ? const Text('Full View',
                                 style: TextStyle(
-                                    fontSize: 12, fontWeight: FontWeight.w600))
+                                    fontSize: 11, fontWeight: FontWeight.w600))
                             : null,
                         tooltip: 'Full Itinerary View',
                       ),
                       ButtonSegment(
                         value: ItineraryViewMode.compact,
-                        icon: const Icon(Icons.table_rows_rounded, size: 15),
+                        icon: const Icon(Icons.table_rows_rounded, size: 13),
                         label: isWideScreen
                             ? const Text('Compact View',
                                 style: TextStyle(
-                                    fontSize: 12, fontWeight: FontWeight.w600))
+                                    fontSize: 11, fontWeight: FontWeight.w600))
                             : null,
                         tooltip: 'Compact Tabular View',
                       ),
                       ButtonSegment(
                         value: ItineraryViewMode.map,
-                        icon: const Icon(Icons.map_rounded, size: 15),
+                        icon: const Icon(Icons.map_rounded, size: 13),
                         label: isWideScreen
                             ? const Text('Map View',
                                 style: TextStyle(
-                                    fontSize: 12, fontWeight: FontWeight.w600))
+                                    fontSize: 11, fontWeight: FontWeight.w600))
                             : null,
                         tooltip: 'Interactive Map View',
+                      ),
+                      ButtonSegment(
+                        value: ItineraryViewMode.calendar,
+                        icon: const Icon(Icons.calendar_month_rounded, size: 13),
+                        label: isWideScreen
+                            ? const Text('Calendar View',
+                                style: TextStyle(
+                                    fontSize: 11, fontWeight: FontWeight.w600))
+                            : null,
+                        tooltip: 'Monthly Calendar View',
                       ),
                     ],
                     selected: {viewMode},
@@ -542,46 +600,100 @@ class _LogisticsViewState extends ConsumerState<LogisticsView> {
                             .setMode(newSelection.first);
                       }
                     },
-                    style: ButtonStyle(
+                    style: SegmentedButton.styleFrom(
                       visualDensity: VisualDensity.compact,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      padding: WidgetStateProperty.all(
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      minimumSize: Size.zero,
                     ),
                   ),
-                  if (viewMode == ItineraryViewMode.full) ...[
-                    const SizedBox(width: 8),
-                    // Quick Horizontal Navigation Controls
-                    if (isWideScreen)
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 4),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        icon: const Icon(Icons.today_rounded, size: 14),
-                        label: const Text('Day 1', style: TextStyle(fontSize: 12)),
-                        onPressed: _scrollToStart,
-                      )
-                    else
-                      IconButton(
-                        icon: const Icon(Icons.today_rounded, size: 20),
-                        tooltip: 'Scroll to Day 1',
-                        visualDensity: VisualDensity.compact,
-                        onPressed: _scrollToStart,
-                      ),
+                  if (viewMode == ItineraryViewMode.full && days.isNotEmpty) ...[
+                    const SizedBox(width: 4),
                     IconButton(
-                      icon: const Icon(Icons.chevron_left_rounded, size: 22),
-                      tooltip: 'Scroll Left (Previous Day)',
+                      icon: const Icon(Icons.chevron_left_rounded, size: 20),
+                      tooltip: 'Previous Day',
                       visualDensity: VisualDensity.compact,
-                      onPressed: () => _scrollBy(-totalColumnStride),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                      onPressed: effectiveDayIndex > 0
+                          ? () => _navigateToDay(effectiveDayIndex - 1, days)
+                          : null,
                     ),
+
+                    // Jump to Day Dropdown Picker
+                    PopupMenuButton<int>(
+                      tooltip: 'Jump to specific day',
+                      initialValue: effectiveDayIndex,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.calendar_today_rounded,
+                                size: 12, color: Colors.grey.shade700),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Day $dayNumber of ${days.length}',
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(width: 2),
+                            const Icon(Icons.arrow_drop_down_rounded, size: 16),
+                          ],
+                        ),
+                      ),
+                      itemBuilder: (ctx) {
+                        return [
+                          for (int k = 0; k < days.length; k++)
+                            PopupMenuItem<int>(
+                              value: k,
+                              child: Row(
+                                children: [
+                                  Text(
+                                    'Day ${k + 1}',
+                                    style: TextStyle(
+                                      fontWeight: k == effectiveDayIndex
+                                          ? FontWeight.w800
+                                          : FontWeight.w600,
+                                      color: k == effectiveDayIndex
+                                          ? AppColors.primary
+                                          : AppColors.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    DateFormatters.dayHeader.format(days[k]),
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.textMuted,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ];
+                      },
+                      onSelected: (idx) => _navigateToDay(idx, days),
+                    ),
+
                     IconButton(
-                      icon: const Icon(Icons.chevron_right_rounded, size: 22),
-                      tooltip: 'Scroll Right (Next Day)',
+                      icon: const Icon(Icons.chevron_right_rounded, size: 20),
+                      tooltip: 'Next Day',
                       visualDensity: VisualDensity.compact,
-                      onPressed: () => _scrollBy(totalColumnStride),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                      onPressed: effectiveDayIndex < days.length - 1
+                          ? () => _navigateToDay(effectiveDayIndex + 1, days)
+                          : null,
                     ),
                   ],
                 ],
@@ -613,6 +725,23 @@ class _LogisticsViewState extends ConsumerState<LogisticsView> {
                   onStayTap: widget.onStayTap,
                   onFlightTap: widget.onFlightTap,
                   onActivityTap: widget.onActivityTap,
+                ),
+              )
+            else if (viewMode == ItineraryViewMode.calendar)
+              Expanded(
+                child: CalendarItineraryView(
+                  trip: trip,
+                  stays: stays,
+                  flights: flightsAsync.value ?? [],
+                  activitiesByDay: activitiesByDay,
+                  canEdit: canEdit,
+                  onStayTap: widget.onStayTap,
+                  onFlightTap: widget.onFlightTap,
+                  onAddStayForDates: widget.onAddStayForDates,
+                  onDayTap: (date) {
+                    ref.read(focusedTripDateProvider.notifier).setDate(date);
+                    ref.read(navTabIndexProvider.notifier).setTab(0);
+                  },
                 ),
               )
             else
@@ -729,6 +858,16 @@ class _LogisticsViewState extends ConsumerState<LogisticsView> {
                                                   );
                                                 }
                                               : null,
+                                          onPlanDay: () {
+                                            ref
+                                                .read(focusedTripDateProvider
+                                                    .notifier)
+                                                .setDate(dayDate);
+                                            ref
+                                                .read(navTabIndexProvider
+                                                    .notifier)
+                                                .setTab(0);
+                                          },
                                         );
                                       },
                                     ),
@@ -749,4 +888,20 @@ class _LogisticsViewState extends ConsumerState<LogisticsView> {
       },
     );
   }
+}
+
+class _HorizontalStayItem {
+  final int startIndex;
+  final int endIndex;
+  final double leftPos;
+  final double rightPos;
+  final Widget Function(int trackIndex) buildWidget;
+
+  const _HorizontalStayItem({
+    required this.startIndex,
+    required this.endIndex,
+    required this.leftPos,
+    required this.rightPos,
+    required this.buildWidget,
+  });
 }

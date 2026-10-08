@@ -48,8 +48,8 @@ class _MapItineraryViewState extends State<MapItineraryView> {
   final TransformationController _transformController =
       TransformationController();
 
-  bool _isDarkMode = true;
-  GoogleMapType _mapType = GoogleMapType.dark;
+  bool _isDarkMode = false;
+  GoogleMapType _mapType = GoogleMapType.roadmap;
   TripMapCityNode? _hoveredCity;
   TripMapConnectionLeg? _hoveredLeg;
   TripMapCityNode? _selectedCity;
@@ -406,7 +406,6 @@ class _MapItineraryViewState extends State<MapItineraryView> {
         mainAxisSize: MainAxisSize.min,
         children: [
           // Map Type Switcher Buttons
-          _buildMapTypeButton(GoogleMapType.dark, Icons.nightlight_round, 'Google Maps: Dark'),
           _buildMapTypeButton(GoogleMapType.roadmap, Icons.map_outlined, 'Google Maps: Roadmap'),
           _buildMapTypeButton(GoogleMapType.satellite, Icons.satellite_alt_rounded, 'Google Maps: Satellite'),
           _buildMapTypeButton(GoogleMapType.terrain, Icons.terrain_rounded, 'Google Maps: Terrain'),
@@ -546,7 +545,7 @@ class _MapItineraryViewState extends State<MapItineraryView> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Sequence Badge Circle
+                    // Location Pin Icon
                     Container(
                       width: 26,
                       height: 26,
@@ -564,14 +563,11 @@ class _MapItineraryViewState extends State<MapItineraryView> {
                           ),
                         ],
                       ),
-                      child: Center(
-                        child: Text(
-                          '${city.sequenceNumber}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w900,
-                          ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.place_rounded,
+                          color: Colors.white,
+                          size: 15,
                         ),
                       ),
                     ),
@@ -581,37 +577,15 @@ class _MapItineraryViewState extends State<MapItineraryView> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  city.cityName,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800,
-                                    color: _isDarkMode ? Colors.white : Colors.black87,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                                decoration: BoxDecoration(
-                                  color: palette.gradient.first.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  '#${city.visitIndex + 1}',
-                                  style: TextStyle(
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w800,
-                                    color: palette.gradient.first,
-                                  ),
-                                ),
-                              ),
-                            ],
+                          Text(
+                            city.cityName,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: _isDarkMode ? Colors.white : Colors.black87,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                           Text(
                             city.totalNights > 0
@@ -635,10 +609,10 @@ class _MapItineraryViewState extends State<MapItineraryView> {
       );
     }
 
-    // Single-visit city rendering with collision-free label placement
+    // Single-visit city rendering with clean pin and location name
     return Positioned(
       left: pt.dx - 80,
-      top: isLabelTop ? pt.dy - 65 : pt.dy - 35,
+      top: isLabelTop ? pt.dy - 50 : pt.dy - 20,
       child: SizedBox(
         width: 160,
         child: Column(
@@ -647,11 +621,11 @@ class _MapItineraryViewState extends State<MapItineraryView> {
           children: [
             if (isLabelTop) ...[
               _buildCityLabelPill(city, palette, isSelected),
-              const SizedBox(height: 4),
-              _buildSequenceBadgeCircle(city, palette, isSelected, isHovered),
+              const SizedBox(height: 3),
+              _buildCityPinMarker(city, palette, isSelected, isHovered),
             ] else ...[
-              _buildSequenceBadgeCircle(city, palette, isSelected, isHovered),
-              const SizedBox(height: 4),
+              _buildCityPinMarker(city, palette, isSelected, isHovered),
+              const SizedBox(height: 3),
               _buildCityLabelPill(city, palette, isSelected),
             ],
           ],
@@ -660,7 +634,7 @@ class _MapItineraryViewState extends State<MapItineraryView> {
     );
   }
 
-  Widget _buildSequenceBadgeCircle(
+  Widget _buildCityPinMarker(
     TripMapCityNode city,
     StayGradientPalette palette,
     bool isSelected,
@@ -681,8 +655,8 @@ class _MapItineraryViewState extends State<MapItineraryView> {
         },
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          width: (isSelected || isHovered) ? 38 : 32,
-          height: (isSelected || isHovered) ? 38 : 32,
+          width: (isSelected || isHovered) ? 22 : 18,
+          height: (isSelected || isHovered) ? 22 : 18,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             gradient: LinearGradient(
@@ -692,24 +666,23 @@ class _MapItineraryViewState extends State<MapItineraryView> {
             ),
             border: Border.all(
               color: Colors.white,
-              width: (isSelected || isHovered) ? 2.5 : 2.0,
+              width: 2.0,
             ),
             boxShadow: [
               BoxShadow(
                 color: palette.gradient.first.withValues(alpha: 0.5),
-                blurRadius: (isSelected || isHovered) ? 14 : 8,
-                spreadRadius: (isSelected || isHovered) ? 3 : 1,
+                blurRadius: (isSelected || isHovered) ? 10 : 5,
+                spreadRadius: 1,
               ),
             ],
           ),
           child: Center(
-            child: Text(
-              '${city.sequenceNumber}',
-              style: TextStyle(
+            child: Container(
+              width: 5,
+              height: 5,
+              decoration: const BoxDecoration(
                 color: Colors.white,
-                fontSize: (isSelected || isHovered) ? 14 : 12,
-                fontWeight: FontWeight.w900,
-                letterSpacing: -0.5,
+                shape: BoxShape.circle,
               ),
             ),
           ),
@@ -879,6 +852,30 @@ class _MapItineraryViewState extends State<MapItineraryView> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Sequence number on transition between locations
+                Container(
+                  width: 17,
+                  height: 17,
+                  decoration: BoxDecoration(
+                    color: isSelected || isHovered
+                        ? Colors.white
+                        : (leg.isFlight ? AppColors.flight : Colors.amber.shade800),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
+                      '${leg.sequenceIndex}',
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w900,
+                        color: isSelected || isHovered
+                            ? (leg.isFlight ? AppColors.flight : Colors.amber.shade800)
+                            : Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
                 Icon(
                   leg.isFlight ? Icons.flight_rounded : Icons.directions_bus_rounded,
                   size: 11,
@@ -1230,7 +1227,7 @@ class _MapItineraryViewState extends State<MapItineraryView> {
                           overflow: TextOverflow.ellipsis,
                         ),
                         Text(
-                          '${leg.fromCity.cityName} ➔ ${leg.toCity.cityName}',
+                          '${leg.fromCity.cityName} → ${leg.toCity.cityName}',
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.9),
                             fontSize: 11,
@@ -1445,17 +1442,14 @@ class _MapItineraryViewState extends State<MapItineraryView> {
                             shape: BoxShape.circle,
                           ),
                           child: Center(
-                            child: Text(
-                              '${city.sequenceNumber}',
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w900,
-                                color: isSelected ? palette.gradient.first : Colors.white,
-                              ),
+                            child: Icon(
+                              Icons.place_rounded,
+                              size: 11,
+                              color: isSelected ? palette.gradient.first : Colors.white,
                             ),
                           ),
                         ),
-                        const SizedBox(width: 6),
+                        const SizedBox(width: 5),
                         Text(
                           city.cityName,
                           style: TextStyle(
@@ -1509,6 +1503,8 @@ class _GoogleMapTileLayer extends StatelessWidget {
   final double canvasWidth;
   final double canvasHeight;
   final bool crossesPacific;
+
+  static final Set<String> _failedUrls = {};
 
   const _GoogleMapTileLayer({
     required this.mapType,
@@ -1578,26 +1574,12 @@ class _GoogleMapTileLayer extends StatelessWidget {
         final wrappedX = (tx % worldTiles.toInt() + worldTiles.toInt()) % worldTiles.toInt();
         final url = 'https://mt1.google.com/vt/lyrs=$lyrs&x=$wrappedX&y=$ty&z=$zoom';
 
+        if (_failedUrls.contains(url)) continue;
+
         final left = (tx * 256.0 - xMinWorld) * scaleX;
         final top = (ty * 256.0 - yMinWorld) * scaleY;
         final width = 256.0 * scaleX + 0.5;
         final height = 256.0 * scaleY + 0.5;
-
-        Widget img = Image.network(
-          url,
-          width: width,
-          height: height,
-          fit: BoxFit.fill,
-          gaplessPlayback: true,
-          errorBuilder: (context, error, stackTrace) => const SizedBox(),
-        );
-
-        if (isDark) {
-          img = ColorFiltered(
-            colorFilter: darkFilter,
-            child: img,
-          );
-        }
 
         tileWidgets.add(
           Positioned(
@@ -1605,18 +1587,39 @@ class _GoogleMapTileLayer extends StatelessWidget {
             top: top,
             width: width,
             height: height,
-            child: img,
+            child: Image.network(
+              url,
+              width: width,
+              height: height,
+              fit: BoxFit.fill,
+              gaplessPlayback: true,
+              errorBuilder: (context, error, stackTrace) {
+                _failedUrls.add(url);
+                return const SizedBox();
+              },
+            ),
           ),
         );
       }
     }
 
-    return SizedBox(
+    Widget content = SizedBox(
       width: canvasWidth,
       height: canvasHeight,
       child: Stack(
         children: tileWidgets,
       ),
+    );
+
+    if (isDark) {
+      content = ColorFiltered(
+        colorFilter: darkFilter,
+        child: content,
+      );
+    }
+
+    return RepaintBoundary(
+      child: content,
     );
   }
 }
