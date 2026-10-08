@@ -46,13 +46,44 @@ final currentUserIdProvider = Provider<String>((ref) {
 // Selected Trip ID Notifier
 class ActiveTripIdNotifier extends Notifier<String?> {
   @override
-  String? build() => 'trip_japan_2026';
+  String? build() {
+    final repo = ref.watch(tripRepositoryProvider);
+    if (repo is MockTripRepository) {
+      return 'trip_japan_2026';
+    }
+    return null;
+  }
 
   void selectTrip(String? id) => state = id;
 }
 
 final activeTripIdProvider =
     NotifierProvider<ActiveTripIdNotifier, String?>(ActiveTripIdNotifier.new);
+
+// Effective Active Trip ID:
+// Resolves explicit selection if it exists in the user's trips,
+// otherwise automatically defaults to the user's first available trip once loaded.
+final effectiveActiveTripIdProvider = Provider<String?>((ref) {
+  final explicitTripId = ref.watch(activeTripIdProvider);
+  final repo = ref.watch(tripRepositoryProvider);
+
+  if (repo is MockTripRepository && explicitTripId != null) {
+    return explicitTripId;
+  }
+
+  final tripsAsync = ref.watch(userTripsProvider);
+  return tripsAsync.when(
+    data: (trips) {
+      if (trips.isEmpty) return null;
+      if (explicitTripId != null && trips.any((t) => t.id == explicitTripId)) {
+        return explicitTripId;
+      }
+      return trips.first.id;
+    },
+    loading: () => null,
+    error: (_, _) => null,
+  );
+});
 
 // Itinerary View Mode: Full View vs Compact View vs Map View vs Calendar View
 enum ItineraryViewMode { full, compact, map, calendar }
@@ -103,7 +134,7 @@ final userTripsProvider = StreamProvider<List<Trip>>((ref) {
 
 // Currently selected Trip
 final activeTripProvider = Provider<Trip?>((ref) {
-  final tripId = ref.watch(activeTripIdProvider);
+  final tripId = ref.watch(effectiveActiveTripIdProvider);
   if (tripId == null) return null;
 
   final tripsAsync = ref.watch(userTripsProvider);
@@ -112,7 +143,7 @@ final activeTripProvider = Provider<Trip?>((ref) {
       try {
         return trips.firstWhere((t) => t.id == tripId);
       } catch (_) {
-        return trips.isNotEmpty ? trips.first : null;
+        return null;
       }
     },
     loading: () => null,
@@ -136,7 +167,7 @@ final canEditActiveTripProvider = Provider<bool>((ref) {
 
 // Active Trip Stays Stream
 final activeTripStaysProvider = StreamProvider<List<Stay>>((ref) {
-  final tripId = ref.watch(activeTripIdProvider);
+  final tripId = ref.watch(effectiveActiveTripIdProvider);
   if (tripId == null) return Stream.value([]);
   final repo = ref.watch(tripRepositoryProvider);
   return repo.watchStays(tripId);
@@ -205,7 +236,7 @@ final sortedActiveTripStaysProvider = Provider<AsyncValue<List<Stay>>>((ref) {
 
 // Active Trip Activities Stream
 final activeTripActivitiesProvider = StreamProvider<List<Activity>>((ref) {
-  final tripId = ref.watch(activeTripIdProvider);
+  final tripId = ref.watch(effectiveActiveTripIdProvider);
   if (tripId == null) return Stream.value([]);
   final repo = ref.watch(tripRepositoryProvider);
   return repo.watchActivities(tripId);
@@ -213,7 +244,7 @@ final activeTripActivitiesProvider = StreamProvider<List<Activity>>((ref) {
 
 // Active Trip Flights Stream
 final activeTripFlightsProvider = StreamProvider<List<Flight>>((ref) {
-  final tripId = ref.watch(activeTripIdProvider);
+  final tripId = ref.watch(effectiveActiveTripIdProvider);
   if (tripId == null) return Stream.value([]);
   final repo = ref.watch(tripRepositoryProvider);
   return repo.watchFlights(tripId);

@@ -34,6 +34,20 @@ class AuthService {
     }
   }
 
+  static const String _serverClientId =
+      '392329008088-cc3p9vbfg1lr70at96cf5r4vr2lhv6qs.apps.googleusercontent.com';
+
+  bool _isGoogleSignInInitialized = false;
+
+  Future<void> _ensureGoogleSignInInitialized() async {
+    if (!_isGoogleSignInInitialized && !kIsWeb) {
+      await GoogleSignIn.instance.initialize(
+        serverClientId: _serverClientId,
+      );
+      _isGoogleSignInInitialized = true;
+    }
+  }
+
   /// Sign in using Google Account
   Future<UserCredential?> signInWithGoogle() async {
     final auth = _auth;
@@ -45,6 +59,7 @@ class AuthService {
         final GoogleAuthProvider authProvider = GoogleAuthProvider();
         return await auth.signInWithPopup(authProvider);
       } else {
+        await _ensureGoogleSignInInitialized();
         final GoogleSignInAccount googleUser =
             await GoogleSignIn.instance.authenticate();
         final GoogleSignInAuthentication googleAuth =

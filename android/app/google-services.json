@@ -14,41 +14,29 @@
       },
       "oauth_client": [
         {
-          "client_id": "392329008088-cc3p9vbfg1lr70at96cf5r4vr2lhv6qs.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
-      "api_key": [
+          "client_id": "392329008088-jk3d3npgvt7kf02qkhv29vref0n305rk.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.roljs.trippy",
+            "certificate_hash": "7fb2531a661dc7290da725c8ff491e720d8e701f"
+          }
+        },
         {
-          "current_key": "AIzaSyAfLl1yvBHCFzHCN4u6hk_0ds0Q6of5ZmY"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "392329008088-cc3p9vbfg1lr70at96cf5r4vr2lhv6qs.apps.googleusercontent.com",
-              "client_type": 3
-            },
-            {
-              "client_id": "392329008088-omh2drr3unok6gqc1c8jc1frqb46g1f9.apps.googleusercontent.com",
-              "client_type": 2,
-              "ios_info": {
-                "bundle_id": "com.trippy.trippy"
-              }
-            }
-          ]
-        }
-      }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:392329008088:android:2dbe9ec1d1855faa3fd8ad",
-        "android_client_info": {
-          "package_name": "com.trippy.trippy"
-        }
-      },
-      "oauth_client": [
+          "client_id": "392329008088-r1b3pr2apbnsdtodo3js8ua4tda627o7.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.roljs.trippy",
+            "certificate_hash": "1ed3ff2b2122a0d00c81b666403dfa00687401f9"
+          }
+        },
+        {
+          "client_id": "392329008088-s390kg8vf89rvhcjrt4oi8lsviun1gi6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.roljs.trippy",
+            "certificate_hash": "8a4e2261155a2213303ab637adc5cea97e76877e"
+          }
+        },
         {
           "client_id": "392329008088-cc3p9vbfg1lr70at96cf5r4vr2lhv6qs.apps.googleusercontent.com",
           "client_type": 3

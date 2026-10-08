@@ -75,7 +75,7 @@ class TripDashboardScreen extends ConsumerWidget {
     if (confirm == true && context.mounted) {
       final repo = ref.read(tripRepositoryProvider);
       final userId = ref.read(currentUserIdProvider);
-      final activeTripId = ref.read(activeTripIdProvider);
+      final activeTripId = ref.read(effectiveActiveTripIdProvider);
 
       await repo.deleteTrip(trip.id);
 
@@ -1288,6 +1288,12 @@ class _ImportTripDialogState extends State<_ImportTripDialog> {
       }
 
       final result = await TripExportService.importFromJson(repo, text, userId);
+
+      if (result.importedTripIds.isNotEmpty) {
+        widget.ref
+            .read(activeTripIdProvider.notifier)
+            .selectTrip(result.importedTripIds.first);
+      }
 
       if (mounted) {
         Navigator.pop(context);

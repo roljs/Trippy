@@ -80,5 +80,22 @@ void main() {
 
       expect(find.byType(AppNavScaffold), findsOneWidget);
     });
+
+    test('effectiveActiveTripIdProvider defaults to first available trip when explicit id is null', () {
+      final container = ProviderContainer(
+        overrides: [
+          tripRepositoryProvider.overrideWithValue(MockTripRepository()),
+          currentUserIdProvider.overrideWithValue('user_current'),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      // In mock repository, default trip is trip_japan_2026
+      expect(container.read(effectiveActiveTripIdProvider), 'trip_japan_2026');
+
+      // If user explicitly selects another trip, it updates
+      container.read(activeTripIdProvider.notifier).selectTrip('trip_iceland_2027');
+      expect(container.read(effectiveActiveTripIdProvider), 'trip_iceland_2027');
+    });
   });
 }

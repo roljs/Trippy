@@ -10,6 +10,7 @@ class ImportResult {
   final int flightsCount;
   final String message;
   final List<String> importedTripTitles;
+  final List<String> importedTripIds;
 
   const ImportResult({
     required this.tripsCount,
@@ -18,6 +19,7 @@ class ImportResult {
     required this.flightsCount,
     required this.message,
     required this.importedTripTitles,
+    this.importedTripIds = const [],
   });
 }
 
@@ -114,6 +116,7 @@ class TripExportService {
     int totalActivities = 0;
     int totalFlights = 0;
     final importedTitles = <String>[];
+    final importedIds = <String>[];
 
     for (final bundle in bundles) {
       // Ensure the importing user has access/ownership
@@ -167,6 +170,7 @@ class TripExportService {
       }
 
       importedTitles.add(tripToSave.title);
+      importedIds.add(tripToSave.id);
     }
 
     return ImportResult(
@@ -177,6 +181,7 @@ class TripExportService {
       message:
           'Successfully imported ${bundles.length} trip(s), $totalStays stay(s), $totalActivities activitie(s), and $totalFlights flight(s).',
       importedTripTitles: importedTitles,
+      importedTripIds: importedIds,
     );
   }
 }
