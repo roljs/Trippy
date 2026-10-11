@@ -213,11 +213,8 @@ void main() {
       expect(find.text('Day 1'), findsOneWidget);
       expect(find.byIcon(Icons.event_note_rounded), findsWidgets);
 
-      // Verify floating stay rectangle on Day 1 shows flight stay name (not address)
-      expect(find.textContaining('Flight DL0167'), findsWidgets);
-
-      // Verify floating stay on subsequent days shows hotel name
-      expect(find.textContaining('APA Hotel Asakusa'), findsWidgets);
+      // Verify stay overlays are removed (hotel and flight names no longer appear as text overlay banners)
+      expect(find.textContaining('APA Hotel Asakusa'), findsNothing);
 
       // Verify clickable flight icons exist for DL0167
       final flightIconButtons = find.widgetWithText(InkWell, 'DL0167');
@@ -229,9 +226,12 @@ void main() {
       expect(tappedFlight, isNotNull);
       expect(tappedFlight!.flightNumber, 'DL0167');
 
-      // Tap on floating night stay rectangle
-      final stayBridge = find.textContaining('Flight DL0167').first;
-      await tester.tap(stayBridge);
+      // Verify stay icon exists in bottom right corner (e.g. hotel icon on days with stay)
+      final stayIcons = find.byIcon(Icons.hotel_rounded);
+      expect(stayIcons, findsWidgets);
+
+      // Tap on stay icon to show stay details
+      await tester.tap(stayIcons.first);
       await tester.pumpAndSettle();
       expect(tappedStay, isNotNull);
 

@@ -68,7 +68,7 @@ class _CompactItineraryViewState extends State<CompactItineraryView> {
     return LayoutBuilder(
       builder: (context, constraints) {
         // Table minimum width to prevent columns from cramping
-        const double minTableWidth = 980.0;
+        const double minTableWidth = 840.0;
         final double tableWidth = constraints.maxWidth > minTableWidth
             ? constraints.maxWidth
             : minTableWidth;
@@ -124,6 +124,7 @@ class _CompactItineraryViewState extends State<CompactItineraryView> {
   }
 
   /// Builds the top header row of the table
+  /// Iteration 16: Consolidates Day of Week into Date column and shows Sleep At right after Date
   Widget _buildTableHeader() {
     return Container(
       decoration: const BoxDecoration(
@@ -135,10 +136,9 @@ class _CompactItineraryViewState extends State<CompactItineraryView> {
       child: const IntrinsicHeight(
         child: Row(
           children: [
-            _HeaderCell(label: 'Date', width: 95),
-            _HeaderCell(label: 'Day of the Week', width: 130),
+            _HeaderCell(label: 'Date', width: 105),
+            _HeaderCell(label: 'Sleep At', width: 210),
             _HeaderCell(label: 'Places to Visit', width: 220),
-            _HeaderCell(label: 'Sleep At', width: 200),
             Expanded(
               child: _HeaderCell(label: 'Notes', isLast: true),
             ),
@@ -171,33 +171,41 @@ class _CompactItineraryViewState extends State<CompactItineraryView> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // 1. Date (e.g. 1-Nov)
+              // 1. Date with day of the week as small label under the date
               _DataCell(
-                width: 95,
-                child: Text(
-                  day.formattedDate,
-                  style: const TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
+                width: 105,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      day.formattedDate,
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      day.dayOfWeek,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
                 ),
               ),
 
-              // 2. Day of the Week (e.g. Domingo / Sunday)
+              // 2. Sleep At (swapped order to show right after Date)
               _DataCell(
-                width: 130,
-                child: Text(
-                  day.dayOfWeek,
-                  style: const TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF1E293B),
-                  ),
-                ),
+                width: 210,
+                child: _buildSleepAtCell(day),
               ),
 
-              // 3. Places to Visit (e.g. Volar, Tokyo or Tokyo, Nikko)
+              // 3. Places to Visit
               _DataCell(
                 width: 220,
                 child: Text(
@@ -210,13 +218,7 @@ class _CompactItineraryViewState extends State<CompactItineraryView> {
                 ),
               ),
 
-              // 4. Sleep At (with hover hotel details)
-              _DataCell(
-                width: 200,
-                child: _buildSleepAtCell(day),
-              ),
-
-              // 5. Notes (succinct summary of flight & day activities)
+              // 4. Notes (succinct summary of flight & day activities)
               Expanded(
                 child: _DataCell(
                   isLast: true,

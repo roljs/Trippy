@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/date_formatters.dart';
+import '../../core/utils/map_launcher_helper.dart';
 import '../../models/models.dart';
 import '../../state/trip_providers.dart';
 import '../common/add_activity_sheet.dart';
+import '../common/modification_source_badge.dart';
 
 class StaysView extends ConsumerWidget {
   final VoidCallback? onAddStay;
@@ -20,19 +23,26 @@ class StaysView extends ConsumerWidget {
 
     return Scaffold(
       floatingActionButton: canEdit
-          ? FloatingActionButton.extended(
-              heroTag: 'add_stay_fab',
-              onPressed: onAddStay,
-              icon: const Icon(Icons.add, color: Colors.white),
-              label: const Text(
-                'Add Stay',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              backgroundColor: AppColors.stay,
-            )
+          ? (MediaQuery.sizeOf(context).width < 600
+              ? FloatingActionButton(
+                  heroTag: 'add_stay_fab',
+                  onPressed: onAddStay,
+                  backgroundColor: AppColors.stay,
+                  child: const Icon(Icons.add, color: Colors.white),
+                )
+              : FloatingActionButton.extended(
+                  heroTag: 'add_stay_fab',
+                  onPressed: onAddStay,
+                  icon: const Icon(Icons.add, color: Colors.white),
+                  label: const Text(
+                    'Add Stay',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  backgroundColor: AppColors.stay,
+                ))
           : null,
       body: staysAsync.when(
         data: (stays) {
@@ -257,6 +267,14 @@ class _StayCard extends ConsumerWidget {
                                 ),
                               ),
                             ),
+                            if (stay.lastModifiedAt != null || stay.lastModifiedSource != null) ...[
+                              const SizedBox(width: 6),
+                              ModificationSourceBadge(
+                                lastModifiedAt: stay.lastModifiedAt,
+                                lastModifiedSource: stay.lastModifiedSource,
+                                isCompact: true,
+                              ),
+                            ],
                           ],
                         ),
                       ],
@@ -451,26 +469,39 @@ class _StayCard extends ConsumerWidget {
               // Address Row
               if (stay.address != null && stay.address!.isNotEmpty) ...[
                 const SizedBox(height: 12),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(
-                      Icons.place_outlined,
-                      size: 16,
-                      color: AppColors.textMuted,
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        stay.address!,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                          fontWeight: FontWeight.w500,
+                InkWell(
+                  onTap: () => MapLauncherHelper.openAddress(stay.address!),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.place_outlined,
+                          size: 16,
+                          color: AppColors.stay,
                         ),
-                      ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            stay.address!,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(
+                          Icons.open_in_new_rounded,
+                          size: 13,
+                          color: AppColors.textMuted,
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ],
 
@@ -511,53 +542,58 @@ class _StayCard extends ConsumerWidget {
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Text(
-                            'Confirmation: ',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: AppColors.textMuted,
-                              fontWeight: FontWeight.w500,
+                    Flexible(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text(
+                              'Confirmation: ',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: AppColors.textMuted,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
-                          ),
-                          Text(
-                            stay.confirmationCode!,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              fontFamily: 'monospace',
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          InkWell(
-                            onTap: () {
-                              Clipboard.setData(
-                                  ClipboardData(text: stay.confirmationCode!));
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Confirmation code copied!'),
-                                  duration: Duration(seconds: 2),
+                            Flexible(
+                              child: Text(
+                                stay.confirmationCode!,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  fontFamily: 'monospace',
+                                  color: AppColors.textPrimary,
                                 ),
-                              );
-                            },
-                            child: const Icon(
-                              Icons.copy_rounded,
-                              size: 14,
-                              color: AppColors.textSecondary,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 6),
+                            InkWell(
+                              onTap: () {
+                                Clipboard.setData(
+                                    ClipboardData(text: stay.confirmationCode!));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Confirmation code copied!'),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                              },
+                              child: const Icon(
+                                Icons.copy_rounded,
+                                size: 14,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -573,6 +609,92 @@ class _StayCard extends ConsumerWidget {
                     fontStyle: FontStyle.italic,
                     color: AppColors.textMuted,
                   ),
+                ),
+              ],
+
+              if (stay.links.isNotEmpty || stay.attachments.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    for (final link in stay.links)
+                      InkWell(
+                        onTap: () async {
+                          final uri = Uri.tryParse(link);
+                          if (uri != null && await canLaunchUrl(uri)) {
+                            await launchUrl(uri,
+                                mode: LaunchMode.externalApplication);
+                          }
+                        },
+                        borderRadius: BorderRadius.circular(4),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color:
+                                AppColors.primaryContainer.withValues(alpha: 0.6),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                                color: AppColors.primary.withValues(alpha: 0.2)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.link_rounded,
+                                  size: 12, color: AppColors.primary),
+                              const SizedBox(width: 4),
+                              ConstrainedBox(
+                                constraints:
+                                    const BoxConstraints(maxWidth: 160),
+                                child: Text(
+                                  link,
+                                  style: const TextStyle(
+                                    fontSize: 10.5,
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    for (final att in stay.attachments)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.attach_file_rounded,
+                                size: 12, color: AppColors.textSecondary),
+                            const SizedBox(width: 4),
+                            ConstrainedBox(
+                              constraints:
+                                  const BoxConstraints(maxWidth: 140),
+                              child: Text(
+                                att,
+                                style: const TextStyle(
+                                  fontSize: 10.5,
+                                  color: AppColors.textSecondary,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
                 ),
               ],
 
@@ -597,19 +719,24 @@ class _StayCard extends ConsumerWidget {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.hotel_rounded, size: 16, color: AppColors.stay),
-                              const SizedBox(width: 6),
-                              Text(
-                                'Check-in / Check-out Activities (${linkedActivities.length})',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.stay,
+                          Expanded(
+                            child: Row(
+                              children: [
+                                const Icon(Icons.hotel_rounded, size: 16, color: AppColors.stay),
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: Text(
+                                    'Check-in / Check-out Activities (${linkedActivities.length})',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.stay,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                           if (canEdit)
                             InkWell(

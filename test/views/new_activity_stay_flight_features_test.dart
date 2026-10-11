@@ -122,10 +122,8 @@ void main() {
       await tester.tap(checkInBtn);
       await tester.pumpAndSettle();
 
-      // Check fields auto-filled
+      // Check fields auto-filled (Location and Confirmation Ref fields hidden from UI in Iteration #21)
       expect(find.text('Check-in: Grand Hyatt Tokyo'), findsOneWidget);
-      expect(find.text('Roppongi, Tokyo, Japan'), findsWidgets);
-      expect(find.text('GH-8899'), findsWidgets);
 
       // Save activity
       final saveBtn = find.text('Add to Day');
@@ -180,6 +178,7 @@ void main() {
 
       // Tap Add Stay Bridge
       final addBtn = find.text('Add Stay Bridge');
+      await tester.ensureVisible(addBtn);
       await tester.tap(addBtn);
       await tester.pumpAndSettle();
 
@@ -286,8 +285,8 @@ void main() {
         tripId: testTrip.id,
         date: DateTime(2026, 11, 4),
         startTime: '15:00',
-        title: 'Check-in: Bay Hotel Tokyo',
-        category: ActivityCategory.stay,
+        title: 'Tokyo Skytree Observation Deck',
+        category: ActivityCategory.entertainment,
       );
       await mockRepo.addActivity(act1);
       await mockRepo.addActivity(act2);
@@ -321,7 +320,7 @@ void main() {
       // Check category headers
       expect(find.text('Attraction'), findsWidgets);
       expect(find.text('Food & Dining'), findsWidgets);
-      expect(find.text('Hotel & Stay'), findsWidgets);
+      expect(find.text('Entertainment'), findsWidgets);
     });
 
     test('6) CityColorHelper ensures stays in same city have identical color and multi-city rows use first city', () {

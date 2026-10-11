@@ -148,14 +148,18 @@ class TripMapHelper {
     'seattle-tacoma international airport': GeoPoint(47.4502, -122.3088),
     'delta sky lounge': GeoPoint(47.4502, -122.3088),
     'bellevue': GeoPoint(47.6101, -122.2015),
-    '3942 west lake sammish': GeoPoint(47.5747, -122.1093),
-    '3942 west lake sammamish': GeoPoint(47.5747, -122.1093),
-    'west lake sammish': GeoPoint(47.5747, -122.1093),
-    'west lake sammamish': GeoPoint(47.5747, -122.1093),
-    'lake sammamish': GeoPoint(47.5747, -122.1093),
-    'lake sammish': GeoPoint(47.5747, -122.1093),
+    '3942 west lake sammish': GeoPoint(47.5747, -122.1235),
+    '3942 west lake sammamish': GeoPoint(47.5747, -122.1235),
+    '3942 w lake sammish': GeoPoint(47.5747, -122.1235),
+    '3942 w lake sammamish': GeoPoint(47.5747, -122.1235),
+    'west lake sammish': GeoPoint(47.5747, -122.1235),
+    'west lake sammamish': GeoPoint(47.5747, -122.1235),
+    'w lake sammish': GeoPoint(47.5747, -122.1235),
+    'w lake sammamish': GeoPoint(47.5747, -122.1235),
+    'lake sammamish': GeoPoint(47.5747, -122.1235),
+    'lake sammish': GeoPoint(47.5747, -122.1235),
     'sammamish': GeoPoint(47.6163, -122.0356),
-    'sammish': GeoPoint(47.5747, -122.1093),
+    'sammish': GeoPoint(47.5747, -122.1235),
     'redmond': GeoPoint(47.6740, -122.1215),
     'kirkland': GeoPoint(47.6769, -122.2060),
     'renton': GeoPoint(47.4829, -122.2171),
@@ -368,9 +372,14 @@ class TripMapHelper {
   static GeoPoint resolveCoordinates(String nameOrCode, {String? contextCountry}) {
     final clean = nameOrCode.toLowerCase().trim();
 
-    // 0. Normalize address typos e.g. "sammish" -> "sammamish"
+    // 0. Normalize address typos & direction abbreviations e.g. "sammish" -> "sammamish", "w" -> "west"
     final normalized = clean
         .replaceAll('sammish', 'sammamish')
+        .replaceAll(RegExp(r'\bw\b', caseSensitive: false), 'west')
+        .replaceAll(RegExp(r'\be\b', caseSensitive: false), 'east')
+        .replaceAll(RegExp(r'\bn\b', caseSensitive: false), 'north')
+        .replaceAll(RegExp(r'\bs\b', caseSensitive: false), 'south')
+        .replaceAll(RegExp(r'\bpkwy\b', caseSensitive: false), 'parkway')
         .replaceAll(RegExp(r'\b\d{5}(-\d{4})?\b'), '')
         .trim();
 
@@ -412,6 +421,8 @@ class TripMapHelper {
       final segClean = seg
           .trim()
           .replaceAll('sammish', 'sammamish')
+          .replaceAll(RegExp(r'\bw\b', caseSensitive: false), 'west')
+          .replaceAll(RegExp(r'\bpkwy\b', caseSensitive: false), 'parkway')
           .replaceAll(RegExp(r'\b(wa|ca|ny|fl|tx|il|or|co|nv)\b'), '')
           .trim();
       for (final key in sortedKeys) {

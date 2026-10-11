@@ -291,7 +291,7 @@ void main() {
       // Switch back to Day Planner - FAB should be hidden
       await tester.tap(find.descendant(
         of: find.byType(BottomNavigationBar),
-        matching: find.text('Day Planner'),
+        matching: find.text('Day'),
       ));
       await tester.pumpAndSettle();
       expect(find.byTooltip('Add Booking or Activity'), findsNothing);

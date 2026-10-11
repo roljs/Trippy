@@ -1,0 +1,35 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Trips attachments: allows authenticated users to read and upload attachments
+    // File size limit: 25 MB
+    match /trips/{tripId}/attachments/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated()
+                   && request.resource.size < 25 * 1024 * 1024;
+      allow delete: if isAuthenticated();
+    }
+
+    // User-specific attachments
+    match /users/{userId}/attachments/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated()
+                   && (request.auth.uid == userId || request.auth != null)
+                   && request.resource.size < 25 * 1024 * 1024;
+      allow delete: if isAuthenticated();
+    }
+
+    // General attachments folder
+    match /attachments/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated()
+                   && request.resource.size < 25 * 1024 * 1024;
+      allow delete: if isAuthenticated();
+    }
+  }
+}

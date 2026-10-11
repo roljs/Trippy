@@ -50,8 +50,12 @@ class Stay {
   final String? checkOutTime; // e.g. "11:00"
   final String? confirmationCode;
   final String? notes;
+  final List<String> links;
+  final List<String> attachments;
   final Flight? overnightFlight;
   final List<String> linkedActivityIds;
+  final DateTime? lastModifiedAt;
+  final String? lastModifiedSource; // 'ui' or 'mcp'
 
   const Stay({
     required this.id,
@@ -65,9 +69,16 @@ class Stay {
     this.checkOutTime,
     this.confirmationCode,
     this.notes,
+    this.links = const [],
+    this.attachments = const [],
     this.overnightFlight,
     this.linkedActivityIds = const [],
+    this.lastModifiedAt,
+    this.lastModifiedSource,
   });
+
+  bool get isModifiedByMcp => lastModifiedSource?.toLowerCase() == 'mcp';
+  bool get isModifiedByUi => lastModifiedSource == null || lastModifiedSource?.toLowerCase() == 'ui';
 
   /// Calculates number of nights of this stay
   int get nights {
@@ -101,8 +112,12 @@ class Stay {
     String? checkOutTime,
     String? confirmationCode,
     String? notes,
+    List<String>? links,
+    List<String>? attachments,
     Flight? overnightFlight,
     List<String>? linkedActivityIds,
+    DateTime? lastModifiedAt,
+    String? lastModifiedSource,
   }) {
     return Stay(
       id: id ?? this.id,
@@ -116,8 +131,12 @@ class Stay {
       checkOutTime: checkOutTime ?? this.checkOutTime,
       confirmationCode: confirmationCode ?? this.confirmationCode,
       notes: notes ?? this.notes,
+      links: links ?? this.links,
+      attachments: attachments ?? this.attachments,
       overnightFlight: overnightFlight ?? this.overnightFlight,
       linkedActivityIds: linkedActivityIds ?? this.linkedActivityIds,
+      lastModifiedAt: lastModifiedAt ?? this.lastModifiedAt,
+      lastModifiedSource: lastModifiedSource ?? this.lastModifiedSource,
     );
   }
 
@@ -134,8 +153,12 @@ class Stay {
       'checkOutTime': checkOutTime,
       'confirmationCode': confirmationCode,
       'notes': notes,
+      'links': links,
+      'attachments': attachments,
       'overnightFlight': overnightFlight?.toMap(),
       'linkedActivityIds': linkedActivityIds,
+      if (lastModifiedAt != null) 'lastModifiedAt': lastModifiedAt!.toIso8601String(),
+      if (lastModifiedSource != null) 'lastModifiedSource': lastModifiedSource,
     };
   }
 
@@ -152,6 +175,14 @@ class Stay {
       checkOutTime: map['checkOutTime'] as String?,
       confirmationCode: map['confirmationCode'] as String?,
       notes: map['notes'] as String?,
+      links: (map['links'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      attachments: (map['attachments'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
       overnightFlight: map['overnightFlight'] != null
           ? Flight.fromMap(map['overnightFlight'] as Map<String, dynamic>)
           : null,
@@ -159,6 +190,10 @@ class Stay {
               ?.map((e) => e.toString())
               .toList() ??
           const [],
+      lastModifiedAt: map['lastModifiedAt'] != null
+          ? DateTime.tryParse(map['lastModifiedAt'].toString())
+          : null,
+      lastModifiedSource: map['lastModifiedSource'] as String?,
     );
   }
 }

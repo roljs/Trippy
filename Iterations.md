@@ -114,3 +114,68 @@ In Day Planner, implement the following features:
 3. Add UserAccountButton on AppNavScaffold and TripDashboardScreen AppBars displaying user avatar, email/guest status, and account dialog with sign-out and guest-to-Google upgrade capability.
 4. Protect userTripsProvider from firing queries when unauthenticated (`userId.isEmpty`), avoiding `[cloud_firestore/permission-denied]`.
 5. Enhance error handling in TripDashboardScreen to display an informative error card with "Retry" and "Manage Account" actions when permission or auth errors occur.
+
+# Iteration #16
+1. Change the label of the "Day Planner" tab to just "Day" to better fit in mobile screens. 
+2. For the calendar view (Itinerary), instead of showing the stays centered vertically across both days, align the stay rectangle towards the bottom, but without covering the visual elements at the bottom of the day squares. This is to avoid covering the labels of the main locations for each day which are also centered vertically. 
+3. In the compact view (Itinerary) optimize the UI real estate for mobile by consolidating the Day of the Week column into the Date column by showing the day of the week as a small label under the date itself. Additionally, swap the order of Sleep At and Places to Visit, to show Sleep At column right after Date. 
+4. Fix the map view in Day planner to zoom correctly and position the pins accurately for all cases, including when there are no activities for a day or when there are transport activities. Currently when zooming in, the map becomes pixelated and low resolution. Some of the pins are shown in incorrect locations, in particular the pin for the following address: 3942 W Lake Sammamish Pkwy SE, Bellevue, WA 98008, USA is shown as if it was located in the opposite shore of Lake Sammamish. 
+5. Fix the rendering of card in the Flights tab. Currently in mobile screens, the departure and arrival airports occupy the whole width leaving no space for the flight duration and connection details in between causing them to be stacked vertically. 
+6. In the Activities tab, Flights and Stays should not be included, only real Activities. 
+7. On mobile screens, remove the Trip code with sharing button shown at the top. This currently causes the name of the trip to be truncated, so if UI real estate is limited, this button should not be shown.
+
+# Iteration #17
+1. In the Calendaer View (Itinerary), simplify the rendering of the day squares to only show the city/location where you are staying in bigger font inside a rectangle (as currently displayed), the other cities/locations must be shown in small grayed out font on top of the rectangle of the main city which should be centered on the square. 
+2. Fix the Activities tab so that tyransfer activities do not show the title of the activity vertically wrapped because the icon/rectangle of the related dflight occupies most of the screen horizaontal real-estate. Optimize the rendering of this type of activity so the title of the activity is show fully and the flight icon takes minimal UI real estate 
+
+# Iteration #18
+1. In the caledar view, keep the main city rectangle always vertically centered, regardless of whether there is an additional lable on top. The additional city labels should be displayed on top of the vertically centered main city rectangle.
+2. In all edit dialogs for activities, flights and stays, whenever there's an address, make its map icon clickable/tappable. Clicking the icon should open the default map app on the phone and center the map on the provided address. On the desktop it should open the address in google maps on the web browser.
+3. Ensure all objects have a "Notes" section to store user-provided notes, files and links. Enhance this section to add the ability to add/remove links and attachments to all objects (activities, stays, flights).
+4. Fix an issue with mobile view that causes any bottom buttons (e.g. "Save Changes" and "Delete") be almost covered by the phone's navigation bar on Android on edit dialogs and other screens that have buttons at the bottom of the screen.
+5. On the Day PLanner view, on mobile phones, remove the floating buttons with warnings and map and instead show them on the top bar next to the day navigation control. The goal is to declutter the UI on small mobile screens. Also enable to navigate from day to day by swiping left and right.
+ 
+
+ #Iteration #19
+ 1. Itineraty->Map View: Do not show rectangles for the locations in the map. Instead just show the pins for each location. This is to declutyter the UI as the rectangles cover the important parts of the map. Also fix the zoom in/ou so that the map actually zooms into more detailed views, currently zooming in just increases the size of the map's image/bitmap, but doesn't really add more details to the map. Lastly, zooming into the map should not make the icons and labels bigger, the icons and labels should remain at the same size (readable, but small) regardless of the level of zoom of the map. 
+ 2. Add a button to the map's navigation controls that allows to show a pop up dialog with a summary of interesting stats about the itinerary. Including number of flights, number of hours spent in flights, total destinations to be visited, number of different stays.
+ 3. Fix an issue that prevents changes to be saved. E.g. On android app I edited an activity (changed start and end times) and save button does nothing. Same with a flight. 
+ 4. Day Planner: To optimize vertical UI real estate in mobile apps, replace the current "Add Activity for this day" button which occupies a full row by a floating plus sign button (without a label) at the bottom right corner of the screen. Also enable adding new activities by double clicking/tapping on a blank section of the day. The plus button should not obstruct other non-scrollable visual elements. Similarly, simplify the "Add Flight", "Add Stay" and "Add Activity" buttons on mobile screens only to omit the label and just show the plus sign.
+
+ # Iteration #20
+ 1. For transport activities, add a button in the Transport Route Locations section that opens up Google Maps in the browser or the default Maps app in mobile showing the directions from the From to the To address.
+ 2. In the Day PLanner view, allow the user to drag and drop activity cards to change their order and start time within the same day. The end time must be adjusted accordingly to keep the activity at the same duration. 
+ 3. For the attachments to any object, enabling uploading files from the local device and also pasting copied images fom the clipboard. Deploy any rules or config diles required to enable this to Firebase.
+
+
+# Iteration #21
+1. Remove the Booking Status section (along with the Confirmation Booking Reference) from Hotel & Stay Activities and Flights that have Stays/Flights linked to them, since these are covered in the Stay and Flights tabs respectively. Also remove the Location / Address (Linked Stay) field, since this is also redundant information when there's a linked Stay.
+2. For the Add Link function, allow to specify a friendly name for the link, if provided, the friendly name should be displayed instead of the full URL. The friendly name should be editable later as well as the url itself. Similarly, allow to specify/edit friendly names for pasted images and uploaded attachments.
+3. In Itinerary Full View, remove the label on the top right corner of the stays that reads "hotel - 1N", this is redundant information and takes valuable space that otherwise can be use to display more of the Stay name.
+4. Day PLanner: For the new drag and drop feature, add a visual cue (like a semi-transparent ghost card or highlight of the target slot) to indicate where the card will drop when the user releases the drag and also align all drop targets to 15min increments. Lastly add the ability to grab the bottom edge of the activity card to extend or shorten the duration, also limited to 15min increments. 
+
+# Iteration #22
+1. [x] Create and enable an MCP Server for Trippy that can be used from Claude, ChatGPT, Gemini web apps, desktop apps and mobile apps. The MCP server should allow clients to read and write trips and all of their details through existing APIs (or create new APIs as needed). It must authenticate with the same Google accounts that control Firebase access. The main use case will be to ask Claude/ChatGPT/Gemini for a proposed daily itinerary and it should be able to directly translate the suggested itinerary once approved by the user into Trippy activities, flights and stays for the corresponding day or date range. The clients should also be able to modify trip details and read all trip details to answer questions about the trip and modify any object as needed to reflect changes desired by the user.
+   - **MCP Server Implementation (`bin/trippy_mcp_server.dart`, `lib/mcp/`)**:
+     - Standard JSON-RPC 2.0 MCP protocol supporting stdio, SSE (`/sse`, `/messages`), and HTTP POST (`/mcp`, `/api/trips`).
+     - Supports direct execution via `dart run bin/trippy_mcp_server.dart` or IDE configurations in `mcp_config.json`.
+     - 16 registered MCP tools covering full CRUD and itinerary orchestration:
+       - `trippy_list_trips`, `trippy_get_trip_details`, `trippy_create_trip`, `trippy_update_trip`
+       - `trippy_list_activities`, `trippy_create_activity`, `trippy_update_activity`, `trippy_delete_activity`
+       - `trippy_list_stays`, `trippy_create_stay`, `trippy_update_stay`, `trippy_delete_stay`
+       - `trippy_list_flights`, `trippy_create_flight`, `trippy_update_flight`, `trippy_delete_flight`
+       - `trippy_apply_suggested_itinerary` (translates full multi-day daily itineraries into atomic activities, stays, and flights with date ranges)
+       - `trippy_authenticate` (verifies Google account email & Firebase auth tokens for `trippy-prod-4524f`)
+2. [x] All objects (activities, stays, flights, etc.) should track a last-modified timestamp and also should know whether the object was modified through the Trippy UI by the user of through the MCP server, so when making changes through the MCP server those changes should be flagged accordingly. On all object card details there should be an UI element that shows the last modified timestamp and whether it was through Trippy UI or MCP server. This flag should be displayed as an icon or text element that is easily understandable by the user.
+   - Added `lastModifiedAt` and `lastModifiedSource` (`'ui'` vs `'mcp'`) fields and getters (`isModifiedByMcp`, `isModifiedByUi`) to `Activity`, `Stay`, `Flight`, and `Trip`.
+   - Updated `FirestoreTripRepository` and `MockTripRepository` to automatically stamp modification metadata on all writes.
+   - Updated `firestore.rules` to enforce valid timestamp and `'ui' | 'mcp'` source constraints.
+   - Built `ModificationSourceBadge` (`lib/views/common/modification_source_badge.dart`):
+     - Displays purple robot icon and `"MCP Server • <time>"` for MCP modifications.
+     - Displays slate edit icon and `"Trippy UI • <time>"` for direct UI modifications.
+     - Integrated across Attractions card, Stays card, Flights card, Day Planner timeline card, Logistics activity card, and edit/add sheets.
+3. [x] Day Planner: When dragging an activity, the floating card that dynamically appears on the side to indicate the new location should also dynamically update the target time and show that in the card, to let the user know at what time the activity would be dropped at.
+   - In `DayPlannerView`:
+     - Added `_hoverDropStartMinutesNotifier` to dynamically broadcast hover drag positions without full widget rebuilds.
+     - Updated `_buildActivityDragFeedback` to observe hover minutes and dynamically show `Target: HH:mm` badge with key `'drag_feedback_target_time'` and formatted time ranges.
+     - Enhanced timeline ghost card (`'timeline_ghost_card'`) with `'timeline_floating_target_time_badge'` displaying real-time target time alongside the 15-minute slot indicator.

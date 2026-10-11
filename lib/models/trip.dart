@@ -16,6 +16,8 @@ class Trip {
   final String? endLocation; // e.g. "San Francisco" or return city
   final DateTime createdAt;
   final DateTime updatedAt;
+  final DateTime? lastModifiedAt;
+  final String? lastModifiedSource; // 'ui' or 'mcp'
 
   const Trip({
     required this.id,
@@ -33,7 +35,12 @@ class Trip {
     this.endLocation,
     required this.createdAt,
     required this.updatedAt,
+    this.lastModifiedAt,
+    this.lastModifiedSource,
   });
+
+  bool get isModifiedByMcp => lastModifiedSource?.toLowerCase() == 'mcp';
+  bool get isModifiedByUi => lastModifiedSource == null || lastModifiedSource?.toLowerCase() == 'ui';
 
   /// Total days in the trip (inclusive of start and end dates)
   int get daysCount {
@@ -93,6 +100,8 @@ class Trip {
     String? endLocation,
     DateTime? createdAt,
     DateTime? updatedAt,
+    DateTime? lastModifiedAt,
+    String? lastModifiedSource,
   }) {
     return Trip(
       id: id ?? this.id,
@@ -110,6 +119,8 @@ class Trip {
       endLocation: endLocation ?? this.endLocation,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      lastModifiedAt: lastModifiedAt ?? this.lastModifiedAt,
+      lastModifiedSource: lastModifiedSource ?? this.lastModifiedSource,
     );
   }
 
@@ -130,6 +141,8 @@ class Trip {
       if (endLocation != null) 'endLocation': endLocation,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
+      if (lastModifiedAt != null) 'lastModifiedAt': lastModifiedAt!.toIso8601String(),
+      if (lastModifiedSource != null) 'lastModifiedSource': lastModifiedSource,
     };
   }
 
@@ -163,6 +176,10 @@ class Trip {
       endLocation: map['endLocation'] as String?,
       createdAt: DateTime.parse(map['createdAt'] as String),
       updatedAt: DateTime.parse(map['updatedAt'] as String),
+      lastModifiedAt: map['lastModifiedAt'] != null
+          ? DateTime.tryParse(map['lastModifiedAt'].toString())
+          : (map['updatedAt'] != null ? DateTime.tryParse(map['updatedAt'].toString()) : null),
+      lastModifiedSource: map['lastModifiedSource'] as String?,
     );
   }
 }

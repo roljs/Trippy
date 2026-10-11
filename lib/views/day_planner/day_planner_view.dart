@@ -11,6 +11,7 @@ import '../common/add_activity_sheet.dart';
 import '../common/add_flight_sheet.dart';
 import '../common/add_stay_sheet.dart';
 import '../logistics/widgets/manage_day_locations_dialog.dart';
+import '../common/modification_source_badge.dart';
 import 'widgets/day_planner_map_panel.dart';
 
 class DayPlannerView extends ConsumerStatefulWidget {
@@ -37,11 +38,21 @@ class DayPlannerView extends ConsumerStatefulWidget {
 class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
   DateTime? _selectedDate;
   final ScrollController _timelineScrollController = ScrollController();
+  final GlobalKey _timelineKey = GlobalKey();
   bool _hasInitialScrolled = false;
   bool _isDesktopSuggestionsVisible = true;
   bool _isDesktopMapVisible = false;
   Activity? _selectedMapActivity;
   DateTime? _lastSyncedFocusedDate;
+  TapDownDetails? _lastTimelineDoubleTapDetails;
+  int? _hoverDropStartMinutes;
+  final ValueNotifier<int?> _hoverDropStartMinutesNotifier =
+      ValueNotifier<int?>(null);
+  Activity? _draggedActivity;
+  String? _resizingActivityId;
+  int? _resizePreviewDurationMinutes;
+  int _resizeStartDurationMinutes = 60;
+  double _resizeAccumulatedDeltaY = 0.0;
 
   void _changeSelectedDate(DateTime newDate) {
     setState(() {
@@ -49,6 +60,12 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
       _lastSyncedFocusedDate = newDate;
       _hasInitialScrolled = false;
       _selectedMapActivity = null;
+      _hoverDropStartMinutes = null;
+      _hoverDropStartMinutesNotifier.value = null;
+      _draggedActivity = null;
+      _resizingActivityId = null;
+      _resizePreviewDurationMinutes = null;
+      _resizeAccumulatedDeltaY = 0.0;
     });
     ref.read(focusedTripDateProvider.notifier).setDate(newDate);
   }
@@ -56,6 +73,7 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
   @override
   void dispose() {
     _timelineScrollController.dispose();
+    _hoverDropStartMinutesNotifier.dispose();
     super.dispose();
   }
 
@@ -791,6 +809,14 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
       repo: repo,
     );
     final overlapGroups = _detectOverlapGroups(dayActivities);
+    final mapPinCount = dayActivities
+        .where((a) =>
+            (a.location != null && a.location!.trim().isNotEmpty) ||
+            (a.effectiveFromLocation != null &&
+                a.effectiveFromLocation!.trim().isNotEmpty) ||
+            (a.effectiveToLocation != null &&
+                a.effectiveToLocation!.trim().isNotEmpty))
+        .length;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1000,10 +1026,105 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                       },
                     ),
                   ] else ...[
+                    // Mobile top bar controls: Warnings/Suggestions Bulb & Day Map
                     IconButton(
-                      icon: const Icon(Icons.map_outlined,
-                          size: 20, color: AppColors.textSecondary),
-                      tooltip: 'Show Day Map',
+                      key: const ValueKey('floating_suggestions_bulb'),
+                      icon: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Icon(
+                            overlapGroups.isNotEmpty
+                                ? Icons.warning_amber_rounded
+                                : Icons.lightbulb_rounded,
+                            size: 20,
+                            color: overlapGroups.isNotEmpty
+                                ? const Color(0xFFDC2626)
+                                : const Color(0xFFD97706),
+                          ),
+                          if (suggestions.length + overlapGroups.length > 0)
+                            Positioned(
+                              right: -6,
+                              top: -6,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 4, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: overlapGroups.isNotEmpty
+                                      ? const Color(0xFFDC2626)
+                                      : const Color(0xFFD97706),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.white, width: 1),
+                                ),
+                                constraints: const BoxConstraints(
+                                    minWidth: 14, minHeight: 14),
+                                child: Center(
+                                  child: Text(
+                                    '${suggestions.length + overlapGroups.length}',
+                                    style: const TextStyle(
+                                      fontSize: 8.5,
+                                      fontWeight: FontWeight.w800,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      tooltip: overlapGroups.isNotEmpty
+                          ? '${overlapGroups.length} conflict(s) detected'
+                          : 'Suggestions (${suggestions.length})',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => _openMobileSuggestionsSheet(
+                        trip: trip,
+                        currentDate: currentDate,
+                        dayNumber: dayNumber,
+                        dayIndex: currentDayIndex,
+                        canEdit: canEdit,
+                        wakeUpInfo: wakeUpInfo,
+                        sleepAtInfo: sleepAtInfo,
+                        effectiveLocations: effectiveLocations,
+                        defaultCountry: defaultCountry,
+                        repo: repo,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      key: const ValueKey('floating_map_button'),
+                      icon: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          const Icon(Icons.map_rounded,
+                              size: 20, color: AppColors.primary),
+                          if (mapPinCount > 0)
+                            Positioned(
+                              right: -6,
+                              top: -6,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 4, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.white, width: 1),
+                                ),
+                                constraints: const BoxConstraints(
+                                    minWidth: 14, minHeight: 14),
+                                child: Center(
+                                  child: Text(
+                                    '$mapPinCount',
+                                    style: const TextStyle(
+                                      fontSize: 8.5,
+                                      fontWeight: FontWeight.w800,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      tooltip: 'Show Day Map ($mapPinCount locations)',
                       visualDensity: VisualDensity.compact,
                       onPressed: () => _openMobileMapSheet(
                         trip: trip,
@@ -1160,8 +1281,22 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                       )
                     : Stack(
                         children: [
-                          // Mobile layout: Single Day Pane fills the entire screen
-                          Positioned.fill(
+                          GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onHorizontalDragEnd: (details) {
+                              final velocity = details.primaryVelocity ?? 0;
+                              if (velocity < -200) {
+                                // Swiped Left -> go to next day
+                                if (currentDayIndex < days.length - 1) {
+                                  _changeSelectedDate(days[currentDayIndex + 1]);
+                                }
+                              } else if (velocity > 200) {
+                                // Swiped Right -> go to previous day
+                                if (currentDayIndex > 0) {
+                                  _changeSelectedDate(days[currentDayIndex - 1]);
+                                }
+                              }
+                            },
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 12, vertical: 12),
@@ -1171,6 +1306,7 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                                 dayNumber: dayNumber,
                                 isToday: isToday,
                                 canEdit: canEdit,
+                                isWide: false,
                                 effectiveLocations: effectiveLocations,
                                 defaultCountry: defaultCountry,
                                 dayActivities: dayActivities,
@@ -1181,56 +1317,17 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                               ),
                             ),
                           ),
-                          // Floating Map icon on the side
-                          Positioned(
-                            right: 20,
-                            bottom: 90,
-                            child: _buildFloatingMapButton(
-                              pinCount: dayActivities
-                                  .where((a) =>
-                                      (a.location != null &&
-                                          a.location!.trim().isNotEmpty) ||
-                                      (a.effectiveFromLocation != null &&
-                                          a.effectiveFromLocation!
-                                              .trim()
-                                              .isNotEmpty) ||
-                                      (a.effectiveToLocation != null &&
-                                          a.effectiveToLocation!
-                                              .trim()
-                                              .isNotEmpty))
-                                  .length,
-                              onTap: () => _openMobileMapSheet(
-                                trip: trip,
-                                currentDate: currentDate,
-                                dayNumber: dayNumber,
-                                dayActivities: dayActivities,
-                                dayFlights: dayFlights,
-                                stays: stays,
-                                defaultCountry: defaultCountry,
+                          if (canEdit)
+                            Positioned(
+                              right: 20,
+                              bottom: 20,
+                              child: FloatingActionButton(
+                                key: const ValueKey('day_planner_add_activity_fab'),
+                                onPressed: () =>
+                                    _openAddActivitySheet(date: currentDate),
+                                child: const Icon(Icons.add_rounded),
                               ),
                             ),
-                          ),
-                          // Floating Bulb icon on the side
-                          Positioned(
-                            right: 20,
-                            bottom: 24,
-                            child: _buildFloatingSuggestionsBulb(
-                              suggestionsCount: suggestions.length,
-                              overlapsCount: overlapGroups.length,
-                              onTap: () => _openMobileSuggestionsSheet(
-                                trip: trip,
-                                currentDate: currentDate,
-                                dayNumber: dayNumber,
-                                dayIndex: currentDayIndex,
-                                canEdit: canEdit,
-                                wakeUpInfo: wakeUpInfo,
-                                sleepAtInfo: sleepAtInfo,
-                                effectiveLocations: effectiveLocations,
-                                defaultCountry: defaultCountry,
-                                repo: repo,
-                              ),
-                            ),
-                          ),
                         ],
                       ),
               ),
@@ -1250,6 +1347,7 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
     required int dayNumber,
     required bool isToday,
     required bool canEdit,
+    bool isWide = true,
     required List<String> effectiveLocations,
     required String defaultCountry,
     required List<Activity> dayActivities,
@@ -1566,7 +1664,7 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
           _buildSleepAtFooter(sleepAtInfo, trip, date),
 
           // 5. BOTTOM ADD ACTIVITY BUTTON
-          if (canEdit)
+          if (canEdit && isWide)
             Padding(
               padding: const EdgeInsets.all(10.0),
               child: OutlinedButton.icon(
@@ -1840,38 +1938,299 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
     return SingleChildScrollView(
       controller: _timelineScrollController,
       physics: const BouncingScrollPhysics(),
-      child: SizedBox(
-        height: totalHeight,
-        child: Stack(
-          children: [
+      child: DragTarget<Activity>(
+        key: const ValueKey('timeline_drag_target'),
+        onWillAcceptWithDetails: (details) => canEdit,
+        onMove: (details) {
+          final RenderBox? box =
+              _timelineKey.currentContext?.findRenderObject() as RenderBox?;
+          if (box == null) return;
+          final localOffset = box.globalToLocal(details.offset);
+          final rawMinutes = (localOffset.dy / (hourHeight / 60.0)).round();
+          final snappedStartMin =
+              ((rawMinutes / 15).round() * 15).clamp(0, 24 * 60 - 15);
+          if (_hoverDropStartMinutesNotifier.value != snappedStartMin) {
+            _hoverDropStartMinutesNotifier.value = snappedStartMin;
+          }
+          if (_hoverDropStartMinutes != snappedStartMin ||
+              _draggedActivity?.id != details.data.id) {
+            setState(() {
+              _hoverDropStartMinutes = snappedStartMin;
+              _draggedActivity = details.data;
+            });
+          }
+        },
+        onLeave: (data) {
+          _hoverDropStartMinutesNotifier.value = null;
+          if (_hoverDropStartMinutes != null || _draggedActivity != null) {
+            setState(() {
+              _hoverDropStartMinutes = null;
+              _draggedActivity = null;
+            });
+          }
+        },
+        onAcceptWithDetails: (details) async {
+          final RenderBox? box =
+              _timelineKey.currentContext?.findRenderObject() as RenderBox?;
+          _hoverDropStartMinutesNotifier.value = null;
+          setState(() {
+            _hoverDropStartMinutes = null;
+            _draggedActivity = null;
+          });
+          if (box == null) return;
+          final localOffset = box.globalToLocal(details.offset);
+          final rawMinutes = (localOffset.dy / (hourHeight / 60.0)).round();
+          final snappedStartMin =
+              ((rawMinutes / 15).round() * 15).clamp(0, 24 * 60 - 15);
+
+          final act = details.data;
+          final oldStartMin = _parseMinutes(act.startTime);
+          if (snappedStartMin == oldStartMin) return;
+
+          int durationMin = 60;
+          if (act.endTime != null) {
+            final oldEndMin = _parseMinutes(act.endTime!);
+            if (oldEndMin > oldStartMin) {
+              durationMin = oldEndMin - oldStartMin;
+            }
+          }
+          final newEndMin = min(24 * 60 - 1, snappedStartMin + durationMin);
+          final newStartStr = _formatMinutesToHHmm(snappedStartMin);
+          final newEndStr =
+              act.endTime != null ? _formatMinutesToHHmm(newEndMin) : null;
+
+          final updated = act.copyWith(
+            startTime: newStartStr,
+            endTime: newEndStr,
+          );
+          final messenger = ScaffoldMessenger.of(context);
+          try {
+            await ref.read(tripRepositoryProvider).updateActivity(updated);
+            if (mounted) {
+              messenger.showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Updated ${act.title}: $newStartStr${newEndStr != null ? ' – $newEndStr' : ''}',
+                  ),
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            }
+          } catch (e) {
+            if (mounted) {
+              messenger.showSnackBar(
+                SnackBar(
+                  content: Text('Failed to update activity: $e'),
+                  backgroundColor: Colors.red.shade700,
+                ),
+              );
+            }
+          }
+        },
+        builder: (context, candidateData, rejectedData) {
+          return SizedBox(
+            key: _timelineKey,
+            height: totalHeight,
+            child: Stack(
+              children: [
+            // Background double-tap to add activity at specific hour
+            Positioned.fill(
+              child: GestureDetector(
+                key: const ValueKey('timeline_double_tap_detector'),
+                behavior: HitTestBehavior.opaque,
+                onDoubleTapDown: canEdit
+                    ? (details) {
+                        _lastTimelineDoubleTapDetails = details;
+                      }
+                    : null,
+                onDoubleTap: canEdit
+                    ? () {
+                        final dy =
+                            _lastTimelineDoubleTapDetails?.localPosition.dy ??
+                                0;
+                        final clickedHour =
+                            (dy / hourHeight).floor().clamp(0, 23);
+                        _openAddActivitySheet(
+                          date: date,
+                          initialStartTime:
+                              TimeOfDay(hour: clickedHour, minute: 0),
+                        );
+                      }
+                    : null,
+                child: const SizedBox.expand(),
+              ),
+            ),
             // 1. Hourly Grid Lines and Labels
             for (int h = 0; h < 24; h++) ...[
               Positioned(
                 left: 0,
                 right: 0,
                 top: h * hourHeight,
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 52,
-                      child: Text(
-                        _formatHourLabel(h),
-                        style: const TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textMuted,
+                child: IgnorePointer(
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 52,
+                        child: Text(
+                          _formatHourLabel(h),
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textMuted,
+                          ),
+                          textAlign: TextAlign.center,
                         ),
-                        textAlign: TextAlign.center,
                       ),
-                    ),
-                    Expanded(
-                      child: Container(
-                        height: 1,
-                        color: Colors.grey.shade200,
+                      Expanded(
+                        child: Container(
+                          height: 1,
+                          color: Colors.grey.shade200,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
+              ),
+            ],
+
+            // Semi-transparent ghost drop card indicating snapped target slot
+            if (_hoverDropStartMinutes != null && _draggedActivity != null) ...[
+              Builder(
+                builder: (context) {
+                  final act = _draggedActivity!;
+                  final oldStartMin = _parseMinutes(act.startTime);
+                  int durationMin = 60;
+                  if (act.endTime != null) {
+                    final oldEndMin = _parseMinutes(act.endTime!);
+                    if (oldEndMin > oldStartMin) {
+                      durationMin = oldEndMin - oldStartMin;
+                    }
+                  }
+                  final double ghostTop =
+                      _hoverDropStartMinutes! * (hourHeight / 60.0);
+                  final double ghostHeight =
+                      max(40.0, durationMin * (hourHeight / 60.0));
+                  final catColor = _getCategoryColor(act.category);
+                  final ghostEndMin =
+                      min(24 * 60 - 1, _hoverDropStartMinutes! + durationMin);
+                  final startStr = _formatMinutesToHHmm(_hoverDropStartMinutes!);
+                  final endStr = act.endTime != null
+                      ? _formatMinutesToHHmm(ghostEndMin)
+                      : null;
+
+                  return Positioned(
+                    key: const ValueKey('timeline_ghost_card'),
+                    left: 56,
+                    right: 12,
+                    top: ghostTop,
+                    height: ghostHeight,
+                    child: IgnorePointer(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: catColor.withValues(alpha: 0.22),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: catColor,
+                            width: 2.0,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: catColor.withValues(alpha: 0.25),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Container(width: 5, color: catColor),
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 6),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      SingleChildScrollView(
+                                        scrollDirection: Axis.horizontal,
+                                        physics: const NeverScrollableScrollPhysics(),
+                                        child: Row(
+                                          children: [
+                                          Text(
+                                            startStr +
+                                                (endStr != null ? ' – $endStr' : ''),
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w800,
+                                              color: catColor,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 5, vertical: 1.5),
+                                            decoration: BoxDecoration(
+                                              color: catColor.withValues(alpha: 0.18),
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: Text(
+                                              'Drop here (15m)',
+                                              style: TextStyle(
+                                                fontSize: 8.5,
+                                                fontWeight: FontWeight.w700,
+                                                color: catColor,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            key: const ValueKey(
+                                                'timeline_floating_target_time_badge'),
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: catColor.withValues(alpha: 0.25),
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                            ),
+                                            child: Text(
+                                              'Target: $startStr',
+                                              style: TextStyle(
+                                                fontSize: 9,
+                                                fontWeight: FontWeight.w800,
+                                                color: catColor,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        act.title,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: AppColors.textPrimary,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
               ),
             ],
 
@@ -1887,167 +2246,419 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                       durationMin = endMin - startMin;
                     }
                   }
+                  final isResizingThis = _resizingActivityId == act.id;
+                  final effectiveDurationMin =
+                      (isResizingThis && _resizePreviewDurationMinutes != null)
+                          ? _resizePreviewDurationMinutes!
+                          : durationMin;
+
                   // Enforce readable minimum height of 40 dp
-                  final clampedDuration = max(40, durationMin);
+                  final clampedDuration = max(40, effectiveDurationMin);
                   final double topPos = startMin * (hourHeight / 60.0);
                   final double cardHeight = clampedDuration * (hourHeight / 60.0);
 
                   final catColor = _getCategoryColor(act.category);
                   final isSelectedOnMap =
                       _isDesktopMapVisible && _selectedMapActivity?.id == act.id;
+                  final displayEndStr = isResizingThis
+                      ? _formatMinutesToHHmm(min(24 * 60 - 1, startMin + effectiveDurationMin))
+                      : act.endTime;
+
+                  final cardWidget = InkWell(
+                    key: ValueKey('activity_card_${act.id}'),
+                    onTap: () {
+                      if (_isDesktopMapVisible) {
+                        setState(() {
+                          _selectedMapActivity =
+                              _selectedMapActivity?.id == act.id ? null : act;
+                        });
+                      } else if (widget.onActivityTap != null) {
+                        widget.onActivityTap!(act);
+                      } else {
+                        _openAddActivitySheet(date: date, activityToEdit: act);
+                      }
+                    },
+                    onDoubleTap: () => widget.onActivityTap != null
+                        ? widget.onActivityTap!(act)
+                        : _openAddActivitySheet(date: date, activityToEdit: act),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: isSelectedOnMap
+                            ? AppColors.primaryContainer.withValues(alpha: 0.25)
+                            : Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isResizingThis
+                              ? catColor
+                              : isSelectedOnMap
+                                  ? AppColors.primary
+                                  : Colors.grey.shade300,
+                          width: (isSelectedOnMap || isResizingThis) ? 2.0 : 0.8,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: isResizingThis
+                                ? catColor.withValues(alpha: 0.2)
+                                : isSelectedOnMap
+                                    ? AppColors.primary.withValues(alpha: 0.15)
+                                    : Colors.black.withValues(alpha: 0.03),
+                            blurRadius: (isSelectedOnMap || isResizingThis) ? 6 : 3,
+                            offset: const Offset(0, 1),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Container(width: 4, color: catColor),
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Text(
+                                                act.startTime,
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: catColor,
+                                                ),
+                                              ),
+                                              if (displayEndStr != null) ...[
+                                                Text(
+                                                  ' – $displayEndStr',
+                                                  style: TextStyle(
+                                                    fontSize: 10,
+                                                    fontWeight: isResizingThis
+                                                        ? FontWeight.w700
+                                                        : FontWeight.normal,
+                                                    color: isResizingThis
+                                                        ? catColor
+                                                        : AppColors.textMuted,
+                                                  ),
+                                                ),
+                                              ],
+                                              if (isResizingThis) ...[
+                                                const SizedBox(width: 4),
+                                                Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                          horizontal: 4,
+                                                          vertical: 1),
+                                                  decoration: BoxDecoration(
+                                                    color: catColor.withValues(
+                                                        alpha: 0.18),
+                                                    borderRadius:
+                                                        BorderRadius.circular(3),
+                                                  ),
+                                                  child: Text(
+                                                    '${effectiveDurationMin}m',
+                                                    style: TextStyle(
+                                                      fontSize: 9,
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                      color: catColor,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                              const SizedBox(width: 6),
+                                              Flexible(
+                                                child: Text(
+                                                  act.title,
+                                                  style: const TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w700,
+                                                    color:
+                                                        AppColors.textPrimary,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                              if (act.mealType != null &&
+                                                  act.mealType!.isNotEmpty) ...[
+                                                const SizedBox(width: 5),
+                                                Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                          horizontal: 5,
+                                                          vertical: 1),
+                                                  decoration: BoxDecoration(
+                                                    color: AppColors
+                                                        .diningContainer,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            4),
+                                                    border: Border.all(
+                                                      color: AppColors.dining
+                                                          .withValues(
+                                                              alpha: 0.3),
+                                                      width: 0.5,
+                                                    ),
+                                                  ),
+                                                  child: Text(
+                                                    act.mealType!.toUpperCase(),
+                                                    style: const TextStyle(
+                                                      fontSize: 8.5,
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                      color: AppColors.dining,
+                                                      letterSpacing: 0.3,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                          if (act.location != null &&
+                                              act.location!.isNotEmpty &&
+                                              cardHeight >= 45) ...[
+                                            const SizedBox(height: 1),
+                                            Text(
+                                              act.location!,
+                                              style: const TextStyle(
+                                                fontSize: 10,
+                                                color:
+                                                    AppColors.textSecondary,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (act.lastModifiedAt != null ||
+                                            act.lastModifiedSource != null) ...[
+                                          ModificationSourceBadge(
+                                            lastModifiedAt: act.lastModifiedAt,
+                                            lastModifiedSource:
+                                                act.lastModifiedSource,
+                                            isCompact: true,
+                                            showTime: false,
+                                          ),
+                                          const SizedBox(width: 4),
+                                        ],
+                                        Icon(
+                                          _getCategoryIcon(act.category),
+                                          size: 14,
+                                          color: catColor,
+                                        ),
+                                        if (canEdit) ...[
+                                          const SizedBox(width: 4),
+                                          Draggable<Activity>(
+                                            key: ValueKey(
+                                                'activity_drag_handle_${act.id}'),
+                                            data: act,
+                                            feedback:
+                                                _buildActivityDragFeedback(
+                                                    act,
+                                                    cardHeight,
+                                                    catColor),
+                                            childWhenDragging:
+                                                const SizedBox.shrink(),
+                                            onDragEnd: (_) {
+                                              _hoverDropStartMinutesNotifier.value = null;
+                                              if (_hoverDropStartMinutes != null ||
+                                                  _draggedActivity != null) {
+                                                setState(() {
+                                                  _hoverDropStartMinutes = null;
+                                                  _draggedActivity = null;
+                                                });
+                                              }
+                                            },
+                                            child: Tooltip(
+                                              message:
+                                                  'Drag to change time/order',
+                                              child: MouseRegion(
+                                                cursor:
+                                                    SystemMouseCursors.grab,
+                                                child: Icon(
+                                                  Icons
+                                                      .drag_indicator_rounded,
+                                                  size: 16,
+                                                  color: Colors.grey.shade400,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+
+                  final fullCardWithResize = ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: cardWidget,
+                        ),
+                        if (canEdit)
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            height: 14,
+                            child: MouseRegion(
+                              cursor: SystemMouseCursors.resizeUpDown,
+                              child: GestureDetector(
+                                key: ValueKey('activity_resize_handle_${act.id}'),
+                                behavior: HitTestBehavior.opaque,
+                                onVerticalDragStart: (details) {
+                                  _resizeStartDurationMinutes = durationMin;
+                                  _resizeAccumulatedDeltaY = 0.0;
+                                  setState(() {
+                                    _resizingActivityId = act.id;
+                                    _resizePreviewDurationMinutes = durationMin;
+                                  });
+                                },
+                                onVerticalDragUpdate: (details) {
+                                  _resizeAccumulatedDeltaY += details.delta.dy;
+                                  final deltaMinutes =
+                                      (_resizeAccumulatedDeltaY / (hourHeight / 60.0)).round();
+                                  final rawNewDuration =
+                                      _resizeStartDurationMinutes + deltaMinutes;
+                                  final snappedDuration =
+                                      ((rawNewDuration / 15).round() * 15);
+                                  final maxPossibleDuration =
+                                      max(15, (24 * 60 - 1) - startMin);
+                                  final clamped =
+                                      snappedDuration.clamp(15, maxPossibleDuration);
+                                  if (_resizePreviewDurationMinutes != clamped) {
+                                    setState(() {
+                                      _resizePreviewDurationMinutes = clamped;
+                                    });
+                                  }
+                                },
+                                onVerticalDragEnd: (details) async {
+                                  final finalDuration =
+                                      _resizePreviewDurationMinutes ?? durationMin;
+                                  final newEndMinutes =
+                                      min(24 * 60 - 1, startMin + finalDuration);
+                                  final newEndStr = _formatMinutesToHHmm(newEndMinutes);
+                                  final actToUpdate = act;
+                                  setState(() {
+                                    _resizingActivityId = null;
+                                    _resizePreviewDurationMinutes = null;
+                                    _resizeAccumulatedDeltaY = 0.0;
+                                  });
+                                  if (actToUpdate.endTime != newEndStr) {
+                                    final updated = actToUpdate.copyWith(endTime: newEndStr);
+                                    final messenger = ScaffoldMessenger.of(context);
+                                    try {
+                                      await ref
+                                          .read(tripRepositoryProvider)
+                                          .updateActivity(updated);
+                                      if (mounted) {
+                                        messenger.showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'Updated duration for ${actToUpdate.title}: $finalDuration min (${actToUpdate.startTime} – $newEndStr)',
+                                            ),
+                                            duration: const Duration(seconds: 2),
+                                          ),
+                                        );
+                                      }
+                                    } catch (e) {
+                                      if (mounted) {
+                                        messenger.showSnackBar(
+                                          SnackBar(
+                                            content: Text('Failed to update activity duration: $e'),
+                                            backgroundColor: Colors.red.shade700,
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  }
+                                },
+                                onVerticalDragCancel: () {
+                                  setState(() {
+                                    _resizingActivityId = null;
+                                    _resizePreviewDurationMinutes = null;
+                                    _resizeAccumulatedDeltaY = 0.0;
+                                  });
+                                },
+                                child: Container(
+                                  height: 14,
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    color: isResizingThis
+                                        ? catColor.withValues(alpha: 0.15)
+                                        : Colors.transparent,
+                                  ),
+                                  child: Container(
+                                    width: 28,
+                                    height: 3,
+                                    decoration: BoxDecoration(
+                                      color: isResizingThis
+                                          ? catColor
+                                          : Colors.grey.shade400.withValues(alpha: 0.7),
+                                      borderRadius: BorderRadius.circular(1.5),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
 
                   return Positioned(
                     left: 56,
                     right: 12,
                     top: topPos,
                     height: cardHeight,
-                    child: InkWell(
-                      onTap: () {
-                        if (_isDesktopMapVisible) {
-                          setState(() {
-                            _selectedMapActivity =
-                                _selectedMapActivity?.id == act.id ? null : act;
-                          });
-                        } else if (widget.onActivityTap != null) {
-                          widget.onActivityTap!(act);
-                        } else {
-                          _openAddActivitySheet(date: date, activityToEdit: act);
-                        }
-                      },
-                      onDoubleTap: () => widget.onActivityTap != null
-                          ? widget.onActivityTap!(act)
-                          : _openAddActivitySheet(date: date, activityToEdit: act),
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: isSelectedOnMap
-                              ? AppColors.primaryContainer.withValues(alpha: 0.25)
-                              : Colors.white,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: isSelectedOnMap
-                                ? AppColors.primary
-                                : Colors.grey.shade300,
-                            width: isSelectedOnMap ? 2.0 : 0.8,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: isSelectedOnMap
-                                  ? AppColors.primary.withValues(alpha: 0.15)
-                                  : Colors.black.withValues(alpha: 0.03),
-                              blurRadius: isSelectedOnMap ? 6 : 3,
-                              offset: const Offset(0, 1),
+                    child: canEdit
+                        ? LongPressDraggable<Activity>(
+                            key: ValueKey('activity_draggable_${act.id}'),
+                            data: act,
+                            feedback: _buildActivityDragFeedback(
+                                act, cardHeight, catColor),
+                            childWhenDragging: Opacity(
+                              opacity: 0.35,
+                              child: fullCardWithResize,
                             ),
-                          ],
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Container(width: 4, color: catColor),
-                              Expanded(
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 4),
-                                  child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            Row(
-                                              children: [
-                                                Text(
-                                                  act.startTime,
-                                                  style: TextStyle(
-                                                    fontSize: 10,
-                                                    fontWeight: FontWeight.w700,
-                                                    color: catColor,
-                                                  ),
-                                                ),
-                                                if (act.endTime != null) ...[
-                                                  Text(
-                                                    ' – ${act.endTime}',
-                                                    style: const TextStyle(
-                                                      fontSize: 10,
-                                                      color: AppColors.textMuted,
-                                                    ),
-                                                  ),
-                                                ],
-                                                const SizedBox(width: 6),
-                                                Flexible(
-                                                  child: Text(
-                                                    act.title,
-                                                    style: const TextStyle(
-                                                      fontSize: 12,
-                                                      fontWeight: FontWeight.w700,
-                                                      color: AppColors.textPrimary,
-                                                    ),
-                                                    maxLines: 1,
-                                                    overflow: TextOverflow.ellipsis,
-                                                  ),
-                                                ),
-                                                if (act.mealType != null &&
-                                                    act.mealType!.isNotEmpty) ...[
-                                                  const SizedBox(width: 5),
-                                                  Container(
-                                                    padding: const EdgeInsets.symmetric(
-                                                        horizontal: 5, vertical: 1),
-                                                    decoration: BoxDecoration(
-                                                      color: AppColors.diningContainer,
-                                                      borderRadius: BorderRadius.circular(4),
-                                                      border: Border.all(
-                                                        color: AppColors.dining.withValues(alpha: 0.3),
-                                                        width: 0.5,
-                                                      ),
-                                                    ),
-                                                    child: Text(
-                                                      act.mealType!.toUpperCase(),
-                                                      style: const TextStyle(
-                                                        fontSize: 8.5,
-                                                        fontWeight: FontWeight.w800,
-                                                        color: AppColors.dining,
-                                                        letterSpacing: 0.3,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ],
-                                            ),
-                                            if (act.location != null &&
-                                                act.location!.isNotEmpty &&
-                                                cardHeight >= 45) ...[
-                                              const SizedBox(height: 1),
-                                              Text(
-                                                act.location!,
-                                                style: const TextStyle(
-                                                  fontSize: 10,
-                                                  color: AppColors.textSecondary,
-                                                ),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ],
-                                          ],
-                                        ),
-                                      ),
-                                      Icon(
-                                        _getCategoryIcon(act.category),
-                                        size: 14,
-                                        color: catColor,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
+                            onDragEnd: (_) {
+                              _hoverDropStartMinutesNotifier.value = null;
+                              if (_hoverDropStartMinutes != null ||
+                                  _draggedActivity != null) {
+                                setState(() {
+                                  _hoverDropStartMinutes = null;
+                                  _draggedActivity = null;
+                                });
+                              }
+                            },
+                            child: fullCardWithResize,
+                          )
+                        : fullCardWithResize,
                   );
                 },
               ),
@@ -2412,6 +3023,150 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
             ],
           ],
         ),
+      );
+    },
+  ),
+);
+  }
+
+  Widget _buildActivityDragFeedback(
+    Activity act,
+    double cardHeight,
+    Color catColor,
+  ) {
+    final oldStartMin = _parseMinutes(act.startTime);
+    int durationMin = 60;
+    if (act.endTime != null) {
+      final oldEndMin = _parseMinutes(act.endTime!);
+      if (oldEndMin > oldStartMin) {
+        durationMin = oldEndMin - oldStartMin;
+      }
+    }
+
+    return Material(
+      color: Colors.transparent,
+      elevation: 8,
+      child: ValueListenableBuilder<int?>(
+        valueListenable: _hoverDropStartMinutesNotifier,
+        builder: (context, hoverMinutes, _) {
+          final effectiveStartMin = hoverMinutes ?? oldStartMin;
+          final effectiveEndMin =
+              min(24 * 60 - 1, effectiveStartMin + durationMin);
+          final startDisplayStr = _formatMinutesToHHmm(effectiveStartMin);
+          final endDisplayStr =
+              act.endTime != null ? _formatMinutesToHHmm(effectiveEndMin) : null;
+          final isHovering = hoverMinutes != null;
+
+          return Container(
+            width: 290,
+            height: max(48.0, cardHeight),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: isHovering ? catColor : catColor.withValues(alpha: 0.8),
+                width: 2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: (isHovering ? catColor : Colors.black)
+                      .withValues(alpha: isHovering ? 0.35 : 0.18),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Row(
+                children: [
+                  Container(width: 5, color: catColor),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            physics: const NeverScrollableScrollPhysics(),
+                            child: Row(
+                              children: [
+                                Text(
+                                  startDisplayStr,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                    color: catColor,
+                                  ),
+                                ),
+                                if (endDisplayStr != null) ...[
+                                  Text(
+                                    ' – $endDisplayStr',
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      fontWeight: isHovering
+                                          ? FontWeight.w700
+                                          : FontWeight.normal,
+                                      color: isHovering
+                                          ? catColor.withValues(alpha: 0.8)
+                                          : AppColors.textMuted,
+                                    ),
+                                  ),
+                                ],
+                                if (isHovering) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    key: const ValueKey('drag_feedback_target_time'),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 5, vertical: 1.5),
+                                    decoration: BoxDecoration(
+                                      color: catColor.withValues(alpha: 0.2),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(
+                                        color: catColor.withValues(alpha: 0.5),
+                                        width: 0.8,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      'Target: $startDisplayStr',
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w800,
+                                        color: catColor,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          Text(
+                            act.title,
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textPrimary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Icon(Icons.drag_indicator_rounded,
+                        size: 18, color: catColor),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }

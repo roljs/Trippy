@@ -4,13 +4,14 @@ import '../../../core/utils/city_color_helper.dart';
 import '../../../core/utils/date_formatters.dart';
 import '../../../core/utils/location_inference_helper.dart';
 import '../../../models/models.dart';
+import '../../common/add_stay_sheet.dart';
 
 /// A traditional monthly calendar view where each day is represented as a square.
 /// Shows at a glance:
-/// - Where the user is spending the day (locations)
-/// - Total count of planned activities
-/// - Clickable flight icons (with distinct colors)
-/// - Clickable night stay bridge rectangle connecting consecutive days
+/// - Where the user is spending the day (locations inside subtle rounded outline rectangles)
+/// - Total count of planned activities (bottom-left)
+/// - Clickable flight icons (bottom-right)
+/// - Clickable stay icon (bottom-right corner) to view Stay details card
 /// - Navigates from any day to the same day in the Day Planner view
 class CalendarItineraryView extends StatefulWidget {
   final Trip trip;
@@ -384,7 +385,6 @@ class _CalendarItineraryViewState extends State<CalendarItineraryView> {
   }) {
     const weekdays = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
-    final days = widget.trip.daysList;
     final firstDayOfMonth = DateTime(month.year, month.month, 1);
     // Sunday = 0, Monday = 1, ..., Saturday = 6
     final leadingBlanks = firstDayOfMonth.weekday % 7;
@@ -437,91 +437,37 @@ class _CalendarItineraryViewState extends State<CalendarItineraryView> {
         ),        // 2. Calendar Rows Grid
         for (int r = 0; r < rowsCount; r++) ...[
           SizedBox(
-            height: 155.0,
-            child: Stack(
-              clipBehavior: Clip.none,
+            height: 145.0,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // 1. Base row with 7 day cells
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (int c = 0; c < 7; c++) ...[
-                      Builder(
-                        builder: (context) {
-                          final cellIndex = (r * 7) + c;
-                          final dayNum = cellIndex - leadingBlanks + 1;
-
-                          if (dayNum < 1 || dayNum > daysInMonth) {
-                            return Expanded(
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFAFAFA),
-                                  border: Border.all(
-                                    color: const Color(0xFFE2E8F0),
-                                    width: 0.5,
-                                  ),
-                                ),
-                              ),
-                            );
-                          }
-
-                          final cellDate =
-                              DateTime(month.year, month.month, dayNum);
-                          return Expanded(
-                            child: _buildDaySquare(
-                              context: context,
-                              date: cellDate,
-                              colWidth: colWidth,
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ],
-                ),
-
-                // 2. Floating Stay Rectangles for transitions in this row
                 for (int c = 0; c < 7; c++) ...[
                   Builder(
                     builder: (context) {
                       final cellIndex = (r * 7) + c;
                       final dayNum = cellIndex - leadingBlanks + 1;
+
                       if (dayNum < 1 || dayNum > daysInMonth) {
-                        return const SizedBox.shrink();
+                        return Expanded(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFAFAFA),
+                              border: Border.all(
+                                color: const Color(0xFFE2E8F0),
+                                width: 0.5,
+                              ),
+                            ),
+                          ),
+                        );
                       }
 
                       final cellDate =
                           DateTime(month.year, month.month, dayNum);
-                      final tripDayIndex =
-                          days.indexWhere((d) => _isSameDay(d, cellDate));
-                      if (tripDayIndex == -1) {
-                        return const SizedBox.shrink();
-                      }
-
-                      final nightStay = _resolveNightStayForDate(cellDate);
-                      if (nightStay == null) {
-                        return const SizedBox.shrink();
-                      }
-
-                      const stayWidth = 118.0;
-                      const stayHeight = 28.0;
-                      const rowHeight = 155.0;
-                      const topPos = (rowHeight - stayHeight) / 2;
-
-                      final double leftPos;
-                      if (c < 6) {
-                        leftPos = ((c + 1) * colWidth) - (stayWidth / 2);
-                      } else {
-                        leftPos = gridWidth - stayWidth + 8;
-                      }
-
-                      return Positioned(
-                        left: leftPos,
-                        top: topPos,
-                        child: _buildFloatingStayRectangle(
-                          stay: nightStay,
-                          width: stayWidth,
-                          height: stayHeight,
+                      return Expanded(
+                        child: _buildDaySquare(
+                          context: context,
+                          date: cellDate,
+                          colWidth: colWidth,
                         ),
                       );
                     },
@@ -535,11 +481,7 @@ class _CalendarItineraryViewState extends State<CalendarItineraryView> {
     );
   }
 
-  Widget _buildFloatingStayRectangle({
-    required Stay stay,
-    required double width,
-    required double height,
-  }) {
+  Widget _buildStayIcon(BuildContext context, Stay stay, DateTime date) {
     final isFlight =
         stay.type == StayType.overnightFlight || stay.overnightFlight != null;
     final palette = isFlight
@@ -548,67 +490,54 @@ class _CalendarItineraryViewState extends State<CalendarItineraryView> {
             stay: stay,
             allStaysInTrip: widget.stays,
           );
+    final stayColor = palette.gradient.first;
+
+    final IconData stayIcon;
+    if (isFlight) {
+      stayIcon = Icons.flight_takeoff_rounded;
+    } else if (stay.type == StayType.rental) {
+      stayIcon = Icons.holiday_village_rounded;
+    } else if (stay.type == StayType.nightTrain) {
+      stayIcon = Icons.train_rounded;
+    } else {
+      stayIcon = Icons.hotel_rounded;
+    }
 
     final tooltipText =
-        'Stay: ${stay.name}${stay.address != null && stay.address!.isNotEmpty ? " (${stay.address})" : ""} • Click to view stay';
+        'Stay: ${stay.name}${stay.address != null && stay.address!.isNotEmpty ? " (${stay.address})" : ""} • Click to view stay details';
 
     return Tooltip(
       message: tooltipText,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () => widget.onStayTap?.call(stay),
-          borderRadius: BorderRadius.circular(6),
-          child: Container(
-            width: width,
-            height: height,
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: palette.gradient,
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.35),
-                width: 0.8,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: palette.shadow.withValues(alpha: 0.38),
-                  blurRadius: 5,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  isFlight ? Icons.flight_takeoff_rounded : Icons.hotel_rounded,
-                  size: 11,
-                  color: Colors.white,
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    stay.name,
-                    style: const TextStyle(
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                      letterSpacing: 0.1,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
+          key: ValueKey('calendar_stay_icon_${date.year}_${date.month}_${date.day}'),
+          onTap: () => _handleStayTap(context, stay),
+          borderRadius: BorderRadius.circular(4),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2.0, vertical: 1.0),
+            child: Icon(
+              stayIcon,
+              size: 13,
+              color: stayColor,
             ),
           ),
         ),
       ),
     );
+  }
+
+  void _handleStayTap(BuildContext context, Stay stay) {
+    if (widget.onStayTap != null) {
+      widget.onStayTap!(stay);
+    } else {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => AddStaySheet(stayToEdit: stay),
+      );
+    }
   }
 
   Color _resolveDayBackgroundColor(DateTime date, Stay? nightStay) {
@@ -626,7 +555,7 @@ class _CalendarItineraryViewState extends State<CalendarItineraryView> {
 
     final customLocations = widget.trip.getCustomLocationsForDate(date);
     final city = (customLocations != null && customLocations.isNotEmpty)
-        ? customLocations.first
+        ? customLocations.last
         : null;
     if (city != null && city.isNotEmpty) {
       final palette =
@@ -637,38 +566,75 @@ class _CalendarItineraryViewState extends State<CalendarItineraryView> {
     return Colors.white;
   }
 
-  Color _resolveDayCityColor(DateTime date, Stay? nightStay) {
-    if (nightStay != null) {
-      if (nightStay.type == StayType.overnightFlight ||
-          nightStay.overnightFlight != null) {
-        return AppColors.flight;
-      }
-      final city =
-          CityColorHelper.extractCityForStay(nightStay) ?? nightStay.name;
-      final palette =
-          CityColorHelper.getPaletteForCity(city, allStaysInTrip: widget.stays);
-      return palette.gradient.first;
+  Color _resolveCityColor(String loc, DateTime date, Stay? nightStay) {
+    if (nightStay != null &&
+        (nightStay.type == StayType.overnightFlight ||
+            nightStay.overnightFlight != null)) {
+      return AppColors.flight;
     }
-
-    final customLocations = widget.trip.getCustomLocationsForDate(date);
-    final city = (customLocations != null && customLocations.isNotEmpty)
-        ? customLocations.first
-        : null;
-    if (city != null && city.isNotEmpty) {
-      final palette =
-          CityColorHelper.getPaletteForCity(city, allStaysInTrip: widget.stays);
-      return palette.gradient.first;
-    }
-
-    final defaultCountry = LocationInferenceHelper.inferTargetCountryForDay(
-      date: date,
-      flights: widget.flights,
-      activities: widget.activitiesByDay.values.expand((x) => x).toList(),
-      tripDestination: widget.trip.destination,
-    );
     final palette =
-        CityColorHelper.getPaletteForCity(defaultCountry, allStaysInTrip: widget.stays);
+        CityColorHelper.getPaletteForCity(loc, allStaysInTrip: widget.stays);
     return palette.gradient.first;
+  }
+
+  ({String mainLocation, List<String> otherLocations}) _partitionDayLocations({
+    required List<String> effectiveLocations,
+    required Stay? nightStay,
+  }) {
+    if (effectiveLocations.isEmpty) {
+      return (mainLocation: '', otherLocations: <String>[]);
+    }
+
+    if (effectiveLocations.length == 1) {
+      return (mainLocation: effectiveLocations.first, otherLocations: <String>[]);
+    }
+
+    // If there is a stay, try to match which effective location corresponds to the stay
+    if (nightStay != null) {
+      final stayCity =
+          CityColorHelper.extractCityForStay(nightStay)?.toLowerCase() ?? '';
+      final stayName = nightStay.name.toLowerCase();
+      final stayAddr = nightStay.address?.toLowerCase() ?? '';
+
+      // 1. Highest priority: Match extracted stay CITY (e.g. "Tokyo" from "Grand Hyatt Tokyo")
+      if (stayCity.isNotEmpty) {
+        for (int i = 0; i < effectiveLocations.length; i++) {
+          final loc = effectiveLocations[i];
+          final locLower = loc.toLowerCase();
+          if (locLower == stayCity ||
+              locLower.contains(stayCity) ||
+              stayCity.contains(locLower)) {
+            final others = List<String>.from(effectiveLocations)..removeAt(i);
+            return (mainLocation: loc, otherLocations: others);
+          }
+        }
+      }
+
+      // 2. Second priority: Match stay name (e.g. "Nikko Ryokan" contains "nikko")
+      for (int i = 0; i < effectiveLocations.length; i++) {
+        final loc = effectiveLocations[i];
+        final locLower = loc.toLowerCase();
+        if (stayName.contains(locLower)) {
+          final others = List<String>.from(effectiveLocations)..removeAt(i);
+          return (mainLocation: loc, otherLocations: others);
+        }
+      }
+
+      // 3. Third priority: Match address parts from last to first (city before country in address)
+      for (int i = effectiveLocations.length - 1; i >= 0; i--) {
+        final loc = effectiveLocations[i];
+        final locLower = loc.toLowerCase();
+        if (stayAddr.contains(locLower)) {
+          final others = List<String>.from(effectiveLocations)..removeAt(i);
+          return (mainLocation: loc, otherLocations: others);
+        }
+      }
+    }
+
+    // Default fallback: The last location in effectiveLocations is where you end the day / stay
+    final mainLoc = effectiveLocations.last;
+    final others = effectiveLocations.sublist(0, effectiveLocations.length - 1);
+    return (mainLocation: mainLoc, otherLocations: others);
   }
 
   Widget _buildDaySquare({
@@ -723,7 +689,13 @@ class _CalendarItineraryViewState extends State<CalendarItineraryView> {
     // Night stay bridging this day to next day
     final nightStay = _resolveNightStayForDate(date);
     final Color bgColor = _resolveDayBackgroundColor(date, nightStay);
-    final Color dayCityColor = _resolveDayCityColor(date, nightStay);
+
+    final partitioned = _partitionDayLocations(
+      effectiveLocations: effectiveLocations,
+      nightStay: nightStay,
+    );
+    final mainLocation = partitioned.mainLocation;
+    final otherLocations = partitioned.otherLocations;
 
     return InkWell(
       onTap: () => widget.onDayTap?.call(date),
@@ -810,38 +782,87 @@ class _CalendarItineraryViewState extends State<CalendarItineraryView> {
               ],
             ),
 
-            // 2. Main Center Element: Location(s) of the day, all unified to the day's stay city color
+            // 2. Main Center Element: Location where you are staying in bigger font inside a rectangle,
+            // with other cities/locations shown in small grayed-out font on top of the rectangle.
+            // Equal-flex architecture guarantees the main city rectangle is ALWAYS vertically centered.
             Expanded(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (final loc in effectiveLocations) ...[
-                        Text(
-                          loc,
-                          style: TextStyle(
-                            fontSize:
-                                effectiveLocations.length > 2 ? 12 : 14.5,
-                            fontWeight: FontWeight.w800,
-                            color: dayCityColor,
-                            letterSpacing: 0.2,
-                          ),
-                          textAlign: TextAlign.center,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        if (loc != effectiveLocations.last)
-                          const SizedBox(height: 2),
-                      ],
-                    ],
-                  ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Column(
+                  children: [
+                    // Top area: other locations aligned to bottom of this flexible space
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.bottomCenter,
+                        child: otherLocations.isEmpty
+                            ? const SizedBox.shrink()
+                            : Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  for (final otherLoc in otherLocations) ...[
+                                    Text(
+                                      otherLoc,
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF64748B),
+                                        letterSpacing: 0.2,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 1),
+                                  ],
+                                  const SizedBox(height: 1),
+                                ],
+                              ),
+                      ),
+                    ),
+
+                    // Main city/location where you are staying in bigger font inside a rectangle
+                    if (mainLocation.isNotEmpty)
+                      Builder(
+                        builder: (context) {
+                          final locColor =
+                              _resolveCityColor(mainLocation, date, nightStay);
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 7, vertical: 2.5),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: locColor,
+                                width: 1.0,
+                              ),
+                            ),
+                            child: Text(
+                              mainLocation,
+                              style: TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w800,
+                                color: locColor,
+                                letterSpacing: 0.2,
+                              ),
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          );
+                        },
+                      ),
+
+                    // Bottom area: equal flex so main city rectangle is perfectly centered
+                    const Expanded(
+                      child: SizedBox(),
+                    ),
+                  ],
                 ),
               ),
             ),
 
-            // 3. Bottom Row: Total activities count (aligned LEFT) & Flight icons (aligned RIGHT)
+            // 3. Bottom Row: Total activities count (aligned LEFT) & Flight / Stay icons (aligned RIGHT)
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -872,11 +893,11 @@ class _CalendarItineraryViewState extends State<CalendarItineraryView> {
 
                 const Spacer(),
 
-                // Right: Flight icon(s)
-                if (dayFlights.isNotEmpty)
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
+                // Right: Flight icon(s) and Stay icon
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (dayFlights.isNotEmpty) ...[
                       for (int idx = 0; idx < dayFlights.length; idx++) ...[
                         Builder(
                           builder: (context) {
@@ -935,7 +956,12 @@ class _CalendarItineraryViewState extends State<CalendarItineraryView> {
                         ),
                       ],
                     ],
-                  ),
+                    if (nightStay != null) ...[
+                      if (dayFlights.isNotEmpty) const SizedBox(width: 4),
+                      _buildStayIcon(context, nightStay, date),
+                    ],
+                  ],
+                ),
               ],
             ),
           ],

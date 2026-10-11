@@ -91,6 +91,8 @@ class Activity {
   final String? confirmationRef;
   final String? ticketUrl;
   final String? notes;
+  final List<String> links;
+  final List<String> attachments;
   final double? cost;
   final bool isCompleted;
   final String? stayId; // Optional link to a Stay
@@ -101,6 +103,8 @@ class Activity {
   final String? transportDirection; // 'to_airport' or 'from_airport'
   final String? fromStayId; // If from is a linked stay
   final String? toStayId; // If to is a linked stay
+  final DateTime? lastModifiedAt;
+  final String? lastModifiedSource; // 'ui' or 'mcp'
 
   const Activity({
     required this.id,
@@ -115,6 +119,8 @@ class Activity {
     this.confirmationRef,
     this.ticketUrl,
     this.notes,
+    this.links = const [],
+    this.attachments = const [],
     this.cost,
     this.isCompleted = false,
     this.stayId,
@@ -125,7 +131,12 @@ class Activity {
     this.transportDirection,
     this.fromStayId,
     this.toStayId,
+    this.lastModifiedAt,
+    this.lastModifiedSource,
   });
+
+  bool get isModifiedByMcp => lastModifiedSource?.toLowerCase() == 'mcp';
+  bool get isModifiedByUi => lastModifiedSource == null || lastModifiedSource?.toLowerCase() == 'ui';
 
   /// Combines date and startTime for accurate chronological sorting
   DateTime get startDateTime {
@@ -184,6 +195,8 @@ class Activity {
     String? confirmationRef,
     String? ticketUrl,
     String? notes,
+    List<String>? links,
+    List<String>? attachments,
     double? cost,
     bool? isCompleted,
     String? stayId,
@@ -194,6 +207,8 @@ class Activity {
     String? transportDirection,
     String? fromStayId,
     String? toStayId,
+    DateTime? lastModifiedAt,
+    String? lastModifiedSource,
   }) {
     return Activity(
       id: id ?? this.id,
@@ -208,6 +223,8 @@ class Activity {
       confirmationRef: confirmationRef ?? this.confirmationRef,
       ticketUrl: ticketUrl ?? this.ticketUrl,
       notes: notes ?? this.notes,
+      links: links ?? this.links,
+      attachments: attachments ?? this.attachments,
       cost: cost ?? this.cost,
       isCompleted: isCompleted ?? this.isCompleted,
       stayId: stayId ?? this.stayId,
@@ -218,6 +235,8 @@ class Activity {
       transportDirection: transportDirection ?? this.transportDirection,
       fromStayId: fromStayId ?? this.fromStayId,
       toStayId: toStayId ?? this.toStayId,
+      lastModifiedAt: lastModifiedAt ?? this.lastModifiedAt,
+      lastModifiedSource: lastModifiedSource ?? this.lastModifiedSource,
     );
   }
 
@@ -235,6 +254,8 @@ class Activity {
       'confirmationRef': confirmationRef,
       'ticketUrl': ticketUrl,
       'notes': notes,
+      'links': links,
+      'attachments': attachments,
       'cost': cost,
       'isCompleted': isCompleted,
       if (stayId != null) 'stayId': stayId,
@@ -245,6 +266,8 @@ class Activity {
       if (transportDirection != null) 'transportDirection': transportDirection,
       if (fromStayId != null) 'fromStayId': fromStayId,
       if (toStayId != null) 'toStayId': toStayId,
+      if (lastModifiedAt != null) 'lastModifiedAt': lastModifiedAt!.toIso8601String(),
+      if (lastModifiedSource != null) 'lastModifiedSource': lastModifiedSource,
     };
   }
 
@@ -262,6 +285,14 @@ class Activity {
       confirmationRef: map['confirmationRef'] as String?,
       ticketUrl: map['ticketUrl'] as String?,
       notes: map['notes'] as String?,
+      links: (map['links'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      attachments: (map['attachments'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
       cost: (map['cost'] as num?)?.toDouble(),
       isCompleted: map['isCompleted'] as bool? ?? false,
       stayId: map['stayId'] as String?,
@@ -272,6 +303,10 @@ class Activity {
       transportDirection: map['transportDirection'] as String?,
       fromStayId: map['fromStayId'] as String?,
       toStayId: map['toStayId'] as String?,
+      lastModifiedAt: map['lastModifiedAt'] != null
+          ? DateTime.tryParse(map['lastModifiedAt'].toString())
+          : null,
+      lastModifiedSource: map['lastModifiedSource'] as String?,
     );
   }
 }

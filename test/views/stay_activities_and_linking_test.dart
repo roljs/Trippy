@@ -179,13 +179,24 @@ void main() {
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
 
+      final hotelDiningActivity = Activity(
+        id: 'act_dining_200',
+        tripId: trip.id,
+        stayId: stay.id,
+        date: checkInActivity.date,
+        startTime: '19:00',
+        title: 'Dinner at The Restaurant',
+        category: ActivityCategory.dining,
+        location: 'Gotthardstrasse 4, 6490 Andermatt',
+      );
+
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
             tripRepositoryProvider.overrideWithValue(repo),
             activeTripProvider.overrideWithValue(trip),
             activeTripStaysProvider.overrideWith((ref) => Stream.value([stay])),
-            activeTripActivitiesProvider.overrideWith((ref) => Stream.value([checkInActivity])),
+            activeTripActivitiesProvider.overrideWith((ref) => Stream.value([hotelDiningActivity])),
           ],
           child: const MaterialApp(
             home: Scaffold(

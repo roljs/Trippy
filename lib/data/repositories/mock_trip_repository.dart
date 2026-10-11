@@ -635,21 +635,29 @@ class MockTripRepository implements TripRepository {
 
   @override
   Future<Trip> createTrip(Trip trip) async {
-    final idx = _trips.indexWhere((t) => t.id == trip.id);
+    final stamped = trip.copyWith(
+      lastModifiedAt: trip.lastModifiedAt ?? DateTime.now(),
+      lastModifiedSource: trip.lastModifiedSource ?? 'ui',
+    );
+    final idx = _trips.indexWhere((t) => t.id == stamped.id);
     if (idx != -1) {
-      _trips[idx] = trip;
+      _trips[idx] = stamped;
     } else {
-      _trips.insert(0, trip);
+      _trips.insert(0, stamped);
     }
     _tripsController.add(List.unmodifiable(_trips));
-    return trip;
+    return stamped;
   }
 
   @override
   Future<void> updateTrip(Trip trip) async {
-    final idx = _trips.indexWhere((t) => t.id == trip.id);
+    final stamped = trip.copyWith(
+      lastModifiedAt: DateTime.now(),
+      lastModifiedSource: trip.lastModifiedSource ?? 'ui',
+    );
+    final idx = _trips.indexWhere((t) => t.id == stamped.id);
     if (idx != -1) {
-      _trips[idx] = trip;
+      _trips[idx] = stamped;
       _tripsController.add(List.unmodifiable(_trips));
     }
   }
@@ -712,24 +720,32 @@ class MockTripRepository implements TripRepository {
 
   @override
   Future<void> addStay(Stay stay) async {
-    final list = _stays.putIfAbsent(stay.tripId, () => []);
-    final idx = list.indexWhere((s) => s.id == stay.id);
+    final stamped = stay.copyWith(
+      lastModifiedAt: stay.lastModifiedAt ?? DateTime.now(),
+      lastModifiedSource: stay.lastModifiedSource ?? 'ui',
+    );
+    final list = _stays.putIfAbsent(stamped.tripId, () => []);
+    final idx = list.indexWhere((s) => s.id == stamped.id);
     if (idx != -1) {
-      list[idx] = stay;
+      list[idx] = stamped;
     } else {
-      list.add(stay);
+      list.add(stamped);
     }
-    _getStaysController(stay.tripId).add(List.unmodifiable(list));
+    _getStaysController(stamped.tripId).add(List.unmodifiable(list));
   }
 
   @override
   Future<void> updateStay(Stay stay) async {
-    final list = _stays[stay.tripId];
+    final stamped = stay.copyWith(
+      lastModifiedAt: DateTime.now(),
+      lastModifiedSource: stay.lastModifiedSource ?? 'ui',
+    );
+    final list = _stays[stamped.tripId];
     if (list != null) {
-      final idx = list.indexWhere((s) => s.id == stay.id);
+      final idx = list.indexWhere((s) => s.id == stamped.id);
       if (idx != -1) {
-        list[idx] = stay;
-        _getStaysController(stay.tripId).add(List.unmodifiable(list));
+        list[idx] = stamped;
+        _getStaysController(stamped.tripId).add(List.unmodifiable(list));
       }
     }
   }
@@ -803,24 +819,32 @@ class MockTripRepository implements TripRepository {
 
   @override
   Future<void> addActivity(Activity activity) async {
-    final list = _activities.putIfAbsent(activity.tripId, () => []);
-    final idx = list.indexWhere((a) => a.id == activity.id);
+    final stamped = activity.copyWith(
+      lastModifiedAt: activity.lastModifiedAt ?? DateTime.now(),
+      lastModifiedSource: activity.lastModifiedSource ?? 'ui',
+    );
+    final list = _activities.putIfAbsent(stamped.tripId, () => []);
+    final idx = list.indexWhere((a) => a.id == stamped.id);
     if (idx != -1) {
-      list[idx] = activity;
+      list[idx] = stamped;
     } else {
-      list.add(activity);
+      list.add(stamped);
     }
-    _getActivitiesController(activity.tripId).add(List.unmodifiable(list));
+    _getActivitiesController(stamped.tripId).add(List.unmodifiable(list));
   }
 
   @override
   Future<void> updateActivity(Activity activity) async {
-    final list = _activities[activity.tripId];
+    final stamped = activity.copyWith(
+      lastModifiedAt: DateTime.now(),
+      lastModifiedSource: activity.lastModifiedSource ?? 'ui',
+    );
+    final list = _activities[stamped.tripId];
     if (list != null) {
-      final idx = list.indexWhere((a) => a.id == activity.id);
+      final idx = list.indexWhere((a) => a.id == stamped.id);
       if (idx != -1) {
-        list[idx] = activity;
-        _getActivitiesController(activity.tripId).add(List.unmodifiable(list));
+        list[idx] = stamped;
+        _getActivitiesController(stamped.tripId).add(List.unmodifiable(list));
       }
     }
   }
@@ -889,24 +913,32 @@ class MockTripRepository implements TripRepository {
 
   @override
   Future<void> addFlight(Flight flight) async {
-    final list = _flights.putIfAbsent(flight.tripId, () => []);
-    final idx = list.indexWhere((f) => f.id == flight.id);
+    final stamped = flight.copyWith(
+      lastModifiedAt: flight.lastModifiedAt ?? DateTime.now(),
+      lastModifiedSource: flight.lastModifiedSource ?? 'ui',
+    );
+    final list = _flights.putIfAbsent(stamped.tripId, () => []);
+    final idx = list.indexWhere((f) => f.id == stamped.id);
     if (idx != -1) {
-      list[idx] = flight;
+      list[idx] = stamped;
     } else {
-      list.add(flight);
+      list.add(stamped);
     }
-    _getFlightsController(flight.tripId).add(List.unmodifiable(list));
+    _getFlightsController(stamped.tripId).add(List.unmodifiable(list));
   }
 
   @override
   Future<void> updateFlight(Flight flight) async {
-    final list = _flights[flight.tripId];
+    final stamped = flight.copyWith(
+      lastModifiedAt: DateTime.now(),
+      lastModifiedSource: flight.lastModifiedSource ?? 'ui',
+    );
+    final list = _flights[stamped.tripId];
     if (list != null) {
-      final idx = list.indexWhere((f) => f.id == flight.id);
+      final idx = list.indexWhere((f) => f.id == stamped.id);
       if (idx != -1) {
-        list[idx] = flight;
-        _getFlightsController(flight.tripId).add(List.unmodifiable(list));
+        list[idx] = stamped;
+        _getFlightsController(stamped.tripId).add(List.unmodifiable(list));
       }
     }
   }

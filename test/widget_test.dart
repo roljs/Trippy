@@ -24,7 +24,7 @@ void main() {
 
     // Verify top bar and bottom nav exist
     expect(find.text('Japan Odyssey: Tokyo & Kyoto'), findsOneWidget);
-    expect(find.text('Day Planner'), findsOneWidget);
+    expect(find.text('Day'), findsOneWidget);
     expect(
         find.descendant(
           of: find.byType(BottomNavigationBar),

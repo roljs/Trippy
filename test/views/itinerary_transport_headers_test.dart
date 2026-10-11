@@ -134,7 +134,8 @@ void main() {
 
       expect(find.text('The Celestine Kyoto Gion'), findsOneWidget);
       expect(find.text('3 nights'), findsOneWidget);
-      expect(find.text('HOTEL • 3N'), findsOneWidget);
+      // HOTEL • 3N badge removed as per Iteration #21
+      expect(find.text('HOTEL • 3N'), findsNothing);
 
       // Verify night segmentation badges/labels
       expect(find.text('Night 1'), findsOneWidget);

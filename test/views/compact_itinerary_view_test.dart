@@ -96,11 +96,11 @@ void main() {
       expect(find.byType(CompactItineraryView), findsOneWidget);
       expect(find.byType(DayColumnWidget), findsNothing);
 
-      // Verify Table Column Headers
+      // Verify Table Column Headers (Iteration 16: Day of the Week consolidated into Date column)
       expect(find.text('Date'), findsOneWidget);
-      expect(find.text('Day of the Week'), findsOneWidget);
-      expect(find.text('Places to Visit'), findsOneWidget);
+      expect(find.text('Day of the Week'), findsNothing);
       expect(find.text('Sleep At'), findsOneWidget);
+      expect(find.text('Places to Visit'), findsOneWidget);
       expect(find.text('Notes'), findsOneWidget);
 
       // Verify specific data rows

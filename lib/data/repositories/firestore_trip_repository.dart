@@ -61,7 +61,7 @@ class FirestoreTripRepository implements TripRepository {
     if (map['id'] == null || (map['id'] as String).isEmpty) {
       map['id'] = doc.id;
     }
-    _sanitizeTimestamps(map, ['startDate', 'endDate', 'createdAt', 'updatedAt']);
+    _sanitizeTimestamps(map, ['startDate', 'endDate', 'createdAt', 'updatedAt', 'lastModifiedAt']);
     return Trip.fromMap(map);
   }
 
@@ -72,7 +72,7 @@ class FirestoreTripRepository implements TripRepository {
     if (map['id'] == null || (map['id'] as String).isEmpty) {
       map['id'] = doc.id;
     }
-    _sanitizeTimestamps(map, ['checkInDate', 'checkOutDate']);
+    _sanitizeTimestamps(map, ['checkInDate', 'checkOutDate', 'lastModifiedAt']);
     if (map['overnightFlight'] is Map) {
       final flightMap =
           Map<String, dynamic>.from(map['overnightFlight'] as Map);
@@ -89,7 +89,7 @@ class FirestoreTripRepository implements TripRepository {
     if (map['id'] == null || (map['id'] as String).isEmpty) {
       map['id'] = doc.id;
     }
-    _sanitizeTimestamps(map, ['departureTime', 'arrivalTime']);
+    _sanitizeTimestamps(map, ['departureTime', 'arrivalTime', 'lastModifiedAt']);
     return Flight.fromMap(map);
   }
 
@@ -100,7 +100,7 @@ class FirestoreTripRepository implements TripRepository {
     if (map['id'] == null || (map['id'] as String).isEmpty) {
       map['id'] = doc.id;
     }
-    _sanitizeTimestamps(map, ['date']);
+    _sanitizeTimestamps(map, ['date', 'lastModifiedAt']);
     return Activity.fromMap(map);
   }
 
@@ -200,14 +200,22 @@ class FirestoreTripRepository implements TripRepository {
 
   @override
   Future<Trip> createTrip(Trip trip) async {
-    final data = _tripToFirestore(trip);
+    final stamped = trip.copyWith(
+      lastModifiedAt: trip.lastModifiedAt ?? DateTime.now(),
+      lastModifiedSource: trip.lastModifiedSource ?? 'ui',
+    );
+    final data = _tripToFirestore(stamped);
     await _tripDoc(trip.id).set(data, SetOptions(merge: true));
-    return trip;
+    return stamped;
   }
 
   @override
   Future<void> updateTrip(Trip trip) async {
-    final data = _tripToFirestore(trip);
+    final stamped = trip.copyWith(
+      lastModifiedAt: DateTime.now(),
+      lastModifiedSource: trip.lastModifiedSource ?? 'ui',
+    );
+    final data = _tripToFirestore(stamped);
     await _tripDoc(trip.id).set(data, SetOptions(merge: true));
   }
 
@@ -294,16 +302,24 @@ class FirestoreTripRepository implements TripRepository {
 
   @override
   Future<void> addStay(Stay stay) async {
-    await _stayDoc(stay.tripId, stay.id).set(
-      _cleanMap(stay.toMap()),
+    final stamped = stay.copyWith(
+      lastModifiedAt: stay.lastModifiedAt ?? DateTime.now(),
+      lastModifiedSource: stay.lastModifiedSource ?? 'ui',
+    );
+    await _stayDoc(stamped.tripId, stamped.id).set(
+      _cleanMap(stamped.toMap()),
       SetOptions(merge: true),
     );
   }
 
   @override
   Future<void> updateStay(Stay stay) async {
-    await _stayDoc(stay.tripId, stay.id).set(
-      _cleanMap(stay.toMap()),
+    final stamped = stay.copyWith(
+      lastModifiedAt: DateTime.now(),
+      lastModifiedSource: stay.lastModifiedSource ?? 'ui',
+    );
+    await _stayDoc(stamped.tripId, stamped.id).set(
+      _cleanMap(stamped.toMap()),
       SetOptions(merge: true),
     );
   }
@@ -372,16 +388,24 @@ class FirestoreTripRepository implements TripRepository {
 
   @override
   Future<void> addActivity(Activity activity) async {
-    await _activityDoc(activity.tripId, activity.id).set(
-      _cleanMap(activity.toMap()),
+    final stamped = activity.copyWith(
+      lastModifiedAt: activity.lastModifiedAt ?? DateTime.now(),
+      lastModifiedSource: activity.lastModifiedSource ?? 'ui',
+    );
+    await _activityDoc(stamped.tripId, stamped.id).set(
+      _cleanMap(stamped.toMap()),
       SetOptions(merge: true),
     );
   }
 
   @override
   Future<void> updateActivity(Activity activity) async {
-    await _activityDoc(activity.tripId, activity.id).set(
-      _cleanMap(activity.toMap()),
+    final stamped = activity.copyWith(
+      lastModifiedAt: DateTime.now(),
+      lastModifiedSource: activity.lastModifiedSource ?? 'ui',
+    );
+    await _activityDoc(stamped.tripId, stamped.id).set(
+      _cleanMap(stamped.toMap()),
       SetOptions(merge: true),
     );
   }
@@ -439,16 +463,24 @@ class FirestoreTripRepository implements TripRepository {
 
   @override
   Future<void> addFlight(Flight flight) async {
-    await _flightDoc(flight.tripId, flight.id).set(
-      _cleanMap(flight.toMap()),
+    final stamped = flight.copyWith(
+      lastModifiedAt: flight.lastModifiedAt ?? DateTime.now(),
+      lastModifiedSource: flight.lastModifiedSource ?? 'ui',
+    );
+    await _flightDoc(stamped.tripId, stamped.id).set(
+      _cleanMap(stamped.toMap()),
       SetOptions(merge: true),
     );
   }
 
   @override
   Future<void> updateFlight(Flight flight) async {
-    await _flightDoc(flight.tripId, flight.id).set(
-      _cleanMap(flight.toMap()),
+    final stamped = flight.copyWith(
+      lastModifiedAt: DateTime.now(),
+      lastModifiedSource: flight.lastModifiedSource ?? 'ui',
+    );
+    await _flightDoc(stamped.tripId, stamped.id).set(
+      _cleanMap(stamped.toMap()),
       SetOptions(merge: true),
     );
   }

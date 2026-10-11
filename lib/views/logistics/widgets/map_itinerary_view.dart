@@ -7,7 +7,6 @@ import '../../../core/utils/trip_map_helper.dart';
 import '../../../models/models.dart';
 import '../../common/add_flight_sheet.dart';
 import '../../common/add_stay_sheet.dart';
-import 'stay_header_bridge_widget.dart';
 
 enum GoogleMapType {
   dark,
@@ -59,16 +58,29 @@ class _MapItineraryViewState extends State<MapItineraryView> {
   static const double _canvasWidth = 3200.0;
   static const double _canvasHeight = 2000.0;
 
+  double _currentScale = 1.0;
+
   @override
   void initState() {
     super.initState();
+    _transformController.addListener(_onTransformChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fitMapToTrip();
     });
   }
 
+  void _onTransformChanged() {
+    final s = _transformController.value.getMaxScaleOnAxis();
+    if ((s - _currentScale).abs() > 0.05) {
+      setState(() {
+        _currentScale = s;
+      });
+    }
+  }
+
   @override
   void dispose() {
+    _transformController.removeListener(_onTransformChanged);
     _transformController.dispose();
     super.dispose();
   }
@@ -124,7 +136,7 @@ class _MapItineraryViewState extends State<MapItineraryView> {
   }
 
   void _centerOnCity(TripMapCityNode city, TripMapRoute route) {
-    final pt = _projectToCanvas(city.coordinates, route.crossesPacific) + city.calloutOffset;
+    final pt = _projectToCanvas(city.coordinates, route.crossesPacific);
     final size = MediaQuery.of(context).size;
     const scale = 1.35;
     final dx = (size.width / 2) - (pt.dx * scale);
@@ -178,7 +190,7 @@ class _MapItineraryViewState extends State<MapItineraryView> {
     double minY = _canvasHeight, maxY = 0;
 
     for (final c in route.cities) {
-      final p = _projectToCanvas(c.coordinates, route.crossesPacific) + c.calloutOffset;
+      final p = _projectToCanvas(c.coordinates, route.crossesPacific);
       if (p.dx < minX) minX = p.dx;
       if (p.dx > maxX) maxX = p.dx;
       if (p.dy < minY) minY = p.dy;
@@ -262,6 +274,7 @@ class _MapItineraryViewState extends State<MapItineraryView> {
                     canvasWidth: _canvasWidth,
                     canvasHeight: _canvasHeight,
                     crossesPacific: route.crossesPacific,
+                    currentScale: _currentScale,
                   ),
 
                   // Route Leader Stems & Connecting Arcs Overlay
@@ -436,6 +449,23 @@ class _MapItineraryViewState extends State<MapItineraryView> {
           ),
           Divider(height: 1, color: _isDarkMode ? Colors.white12 : Colors.grey.shade200),
 
+          // Itinerary Stats Dialog
+          IconButton(
+            key: const ValueKey('map_itinerary_stats_button'),
+            icon: Icon(Icons.analytics_outlined, size: 19, color: _isDarkMode ? Colors.white : Colors.black87),
+            tooltip: 'Itinerary Stats',
+            onPressed: () {
+              final route = TripMapHelper.extractRoute(
+                trip: widget.trip,
+                stays: widget.stays,
+                flights: widget.flights,
+                activitiesByDay: widget.activitiesByDay,
+              );
+              _showItineraryStatsDialog(context, route);
+            },
+          ),
+          Divider(height: 1, color: _isDarkMode ? Colors.white12 : Colors.grey.shade200),
+
           // Dark/Light Theme Toggle
           IconButton(
             icon: Icon(
@@ -454,6 +484,171 @@ class _MapItineraryViewState extends State<MapItineraryView> {
                 }
               });
             },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showItineraryStatsDialog(BuildContext context, TripMapRoute route) {
+    final flights = widget.flights;
+    final flightCount = flights.length;
+    final totalFlightMinutes = flights.fold<int>(
+      0,
+      (sum, f) => sum + math.max(0, f.arrivalTime.difference(f.departureTime).inMinutes),
+    );
+    final flightHours = totalFlightMinutes ~/ 60;
+    final flightRemainingMinutes = totalFlightMinutes % 60;
+    final flightTimeStr = flightHours > 0
+        ? '${flightHours}h ${flightRemainingMinutes > 0 ? "$flightRemainingMinutes m" : ""}'.trim()
+        : '${flightRemainingMinutes}m';
+
+    final totalDestinations = route.cities.map((c) => c.cityName.trim().toLowerCase()).toSet().length;
+    final stayCount = widget.stays.length;
+    final totalDays = math.max(1, widget.trip.endDate.difference(widget.trip.startDate).inDays + 1);
+    final totalActivities = widget.activitiesByDay.values.fold<int>(0, (sum, list) => sum + list.length);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.analytics_rounded, color: AppColors.primary, size: 22),
+            ),
+            const SizedBox(width: 10),
+            const Text(
+              'Trip Itinerary Stats',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 360,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildStatTile(
+                icon: Icons.flight_takeoff_rounded,
+                color: AppColors.flight,
+                label: 'Flights',
+                value: '$flightCount',
+                subtitle: totalFlightMinutes > 0 ? 'Total in air: $flightTimeStr' : 'No flights recorded',
+              ),
+              const SizedBox(height: 10),
+              _buildStatTile(
+                icon: Icons.timer_outlined,
+                color: const Color(0xFF0284C7),
+                label: 'Flight Travel Time',
+                value: flightTimeStr,
+                subtitle: 'Cumulative hours spent in flights',
+              ),
+              const SizedBox(height: 10),
+              _buildStatTile(
+                icon: Icons.location_on_rounded,
+                color: Colors.deepOrange,
+                label: 'Destinations',
+                value: '$totalDestinations',
+                subtitle: 'Total destinations to visit',
+              ),
+              const SizedBox(height: 10),
+              _buildStatTile(
+                icon: Icons.hotel_rounded,
+                color: AppColors.stay,
+                label: 'Stays',
+                value: '$stayCount',
+                subtitle: 'Number of different stays',
+              ),
+              const SizedBox(height: 10),
+              _buildStatTile(
+                icon: Icons.calendar_today_rounded,
+                color: Colors.teal,
+                label: 'Total Days',
+                value: '$totalDays ${totalDays == 1 ? "Day" : "Days"}',
+                subtitle: '${DateFormatters.shortDate.format(widget.trip.startDate)} - ${DateFormatters.shortDate.format(widget.trip.endDate)}',
+              ),
+              const SizedBox(height: 10),
+              _buildStatTile(
+                icon: Icons.local_activity_rounded,
+                color: Colors.purple,
+                label: 'Activities',
+                value: '$totalActivities',
+                subtitle: 'Tours, dining, attractions scheduled',
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatTile({
+    required IconData icon,
+    required Color color,
+    required String label,
+    required String value,
+    required String subtitle,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: Colors.grey,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              color: color,
+            ),
           ),
         ],
       ),
@@ -485,282 +680,99 @@ class _MapItineraryViewState extends State<MapItineraryView> {
   }
 
   Widget _buildCityNodeWidget(TripMapCityNode city, TripMapRoute route) {
-    final basePt = _projectToCanvas(city.coordinates, route.crossesPacific);
-    final pt = basePt + city.calloutOffset;
+    final pt = _projectToCanvas(city.coordinates, route.crossesPacific);
     final palette = CityColorHelper.getPaletteForCity(city.cityName);
     final isSelected = _selectedCity?.sequenceNumber == city.sequenceNumber;
     final isHovered = _hoveredCity?.sequenceNumber == city.sequenceNumber;
 
-    final isCallout = city.totalVisitsToThisCity > 1;
-    final cLower = city.cityName.toLowerCase();
-
-    // Check label positioning for single-visit cities to avoid overlaps
-    final isLabelTop = cLower == 'nikko' || cLower == 'ayutthaya';
-
-    if (isCallout) {
-      // Build Call Out Card for repeated visit sequence numbers
-      return Positioned(
-        left: pt.dx - 92,
-        top: pt.dy - 35,
-        child: SizedBox(
-          width: 184,
-          child: MouseRegion(
-            cursor: SystemMouseCursors.click,
-            onEnter: (_) => setState(() => _hoveredCity = city),
-            onExit: (_) => setState(() {
-              if (_hoveredCity == city) _hoveredCity = null;
-            }),
-            child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _selectedCity = (_selectedCity == city) ? null : city;
-                  _selectedLeg = null;
-                });
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: _isDarkMode
-                      ? const Color(0xFF0F172A).withValues(alpha: 0.94)
-                      : Colors.white.withValues(alpha: 0.96),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: isSelected || isHovered
-                        ? palette.gradient.first
-                        : (_isDarkMode ? Colors.white24 : Colors.black12),
-                    width: isSelected || isHovered ? 2.0 : 1.2,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: (isSelected || isHovered
-                              ? palette.gradient.first
-                              : Colors.black)
-                          .withValues(alpha: isSelected || isHovered ? 0.45 : 0.2),
-                      blurRadius: isSelected || isHovered ? 12 : 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Location Pin Icon
-                    Container(
-                      width: 26,
-                      height: 26,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: LinearGradient(
-                          colors: palette.gradient,
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: palette.gradient.first.withValues(alpha: 0.5),
-                            blurRadius: 6,
-                          ),
-                        ],
-                      ),
-                      child: const Center(
-                        child: Icon(
-                          Icons.place_rounded,
-                          color: Colors.white,
-                          size: 15,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            city.cityName,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                              color: _isDarkMode ? Colors.white : Colors.black87,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          Text(
-                            city.totalNights > 0
-                                ? '${city.totalNights} ${city.totalNights == 1 ? "Night" : "Nights"}'
-                                : (city.isOriginOrReturn ? 'Origin Base' : 'Transit'),
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: palette.gradient.first,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    // Single-visit city rendering with clean pin and location name
     return Positioned(
-      left: pt.dx - 80,
-      top: isLabelTop ? pt.dy - 50 : pt.dy - 20,
-      child: SizedBox(
-        width: 160,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            if (isLabelTop) ...[
-              _buildCityLabelPill(city, palette, isSelected),
-              const SizedBox(height: 3),
-              _buildCityPinMarker(city, palette, isSelected, isHovered),
-            ] else ...[
-              _buildCityPinMarker(city, palette, isSelected, isHovered),
-              const SizedBox(height: 3),
-              _buildCityLabelPill(city, palette, isSelected),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCityPinMarker(
-    TripMapCityNode city,
-    StayGradientPalette palette,
-    bool isSelected,
-    bool isHovered,
-  ) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hoveredCity = city),
-      onExit: (_) => setState(() {
-        if (_hoveredCity == city) _hoveredCity = null;
-      }),
-      child: GestureDetector(
-        onTap: () {
-          setState(() {
-            _selectedCity = (_selectedCity == city) ? null : city;
-            _selectedLeg = null;
-          });
-        },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          width: (isSelected || isHovered) ? 22 : 18,
-          height: (isSelected || isHovered) ? 22 : 18,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: LinearGradient(
-              colors: palette.gradient,
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            border: Border.all(
-              color: Colors.white,
-              width: 2.0,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: palette.gradient.first.withValues(alpha: 0.5),
-                blurRadius: (isSelected || isHovered) ? 10 : 5,
-                spreadRadius: 1,
-              ),
-            ],
-          ),
-          child: Center(
-            child: Container(
-              width: 5,
-              height: 5,
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCityLabelPill(
-    TripMapCityNode city,
-    StayGradientPalette palette,
-    bool isSelected,
-  ) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hoveredCity = city),
-      onExit: (_) => setState(() {
-        if (_hoveredCity == city) _hoveredCity = null;
-      }),
-      child: GestureDetector(
-        onTap: () {
-          setState(() {
-            _selectedCity = (_selectedCity == city) ? null : city;
-            _selectedLeg = null;
-          });
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
-          decoration: BoxDecoration(
-            color: _isDarkMode
-                ? const Color(0xFF0F172A).withValues(alpha: 0.92)
-                : Colors.white.withValues(alpha: 0.95),
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(
-              color: isSelected
-                  ? palette.gradient.first
-                  : (_isDarkMode ? Colors.white24 : Colors.black12),
-              width: isSelected ? 1.5 : 0.8,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.15),
-                blurRadius: 4,
-                offset: const Offset(0, 1),
-              ),
-            ],
-          ),
+      left: pt.dx - 60,
+      top: pt.dy - 16,
+      child: Transform.scale(
+        scale: 1.0 / _currentScale.clamp(0.25, 5.0),
+        child: SizedBox(
+          width: 120,
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Text(
-                city.cityName,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: _isDarkMode ? Colors.white : Colors.black87,
+              MouseRegion(
+                cursor: SystemMouseCursors.click,
+                onEnter: (_) => setState(() => _hoveredCity = city),
+                onExit: (_) => setState(() {
+                  if (_hoveredCity == city) _hoveredCity = null;
+                }),
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedCity = (_selectedCity == city) ? null : city;
+                      _selectedLeg = null;
+                    });
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: (isSelected || isHovered) ? 26 : 22,
+                    height: (isSelected || isHovered) ? 26 : 22,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        colors: palette.gradient,
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      border: Border.all(
+                        color: Colors.white,
+                        width: 2.0,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: palette.gradient.first.withValues(alpha: 0.6),
+                          blurRadius: (isSelected || isHovered) ? 10 : 4,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                    child: const Center(
+                      child: Icon(
+                        Icons.place_rounded,
+                        color: Colors.white,
+                        size: 14,
+                      ),
+                    ),
+                  ),
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
-              if (city.totalNights > 0)
-                Text(
-                  '${city.totalNights} ${city.totalNights == 1 ? "Night" : "Nights"}',
+              const SizedBox(height: 2),
+              // Clean city label text without opaque background box covering map
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _selectedCity = (_selectedCity == city) ? null : city;
+                    _selectedLeg = null;
+                  });
+                },
+                child: Text(
+                  city.cityName,
                   style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    color: palette.gradient.first,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: _isDarkMode ? Colors.white : Colors.black87,
+                    shadows: [
+                      Shadow(
+                        color: _isDarkMode ? Colors.black : Colors.white,
+                        blurRadius: 4,
+                      ),
+                      Shadow(
+                        color: _isDarkMode ? Colors.black : Colors.white,
+                        blurRadius: 8,
+                      ),
+                    ],
                   ),
-                )
-              else if (city.isOriginOrReturn)
-                const Text(
-                  'Origin Base',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textSecondary,
-                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
+              ),
             ],
           ),
         ),
@@ -769,10 +781,8 @@ class _MapItineraryViewState extends State<MapItineraryView> {
   }
 
   Widget _buildLegMonikerBadge(TripMapConnectionLeg leg, TripMapRoute route) {
-    final pFrom = _projectToCanvas(leg.fromCity.coordinates, route.crossesPacific) +
-        leg.fromCity.calloutOffset;
-    final pTo = _projectToCanvas(leg.toCity.coordinates, route.crossesPacific) +
-        leg.toCity.calloutOffset;
+    final pFrom = _projectToCanvas(leg.fromCity.coordinates, route.crossesPacific);
+    final pTo = _projectToCanvas(leg.toCity.coordinates, route.crossesPacific);
 
     final dx = pTo.dx - pFrom.dx;
     final dy = pTo.dy - pFrom.dy;
@@ -808,94 +818,97 @@ class _MapItineraryViewState extends State<MapItineraryView> {
     return Positioned(
       left: apexX - 45,
       top: apexY - 12,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _hoveredLeg = leg),
-        onExit: (_) => setState(() {
-          if (_hoveredLeg == leg) _hoveredLeg = null;
-        }),
-        child: GestureDetector(
-          onTap: () {
-            setState(() {
-              _selectedLeg = (_selectedLeg == leg) ? null : leg;
-              _selectedCity = null;
-            });
-            if (leg.flight != null) {
-              _openFlightModal(leg.flight!);
-            }
-          },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: isSelected || isHovered
-                  ? AppColors.flight
-                  : (_isDarkMode
-                      ? const Color(0xFF1E293B).withValues(alpha: 0.95)
-                      : Colors.white.withValues(alpha: 0.95)),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
+      child: Transform.scale(
+        scale: 1.0 / _currentScale.clamp(0.25, 5.0),
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => setState(() => _hoveredLeg = leg),
+          onExit: (_) => setState(() {
+            if (_hoveredLeg == leg) _hoveredLeg = null;
+          }),
+          child: GestureDetector(
+            onTap: () {
+              setState(() {
+                _selectedLeg = (_selectedLeg == leg) ? null : leg;
+                _selectedCity = null;
+              });
+              if (leg.flight != null) {
+                _openFlightModal(leg.flight!);
+              }
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
                 color: isSelected || isHovered
-                    ? Colors.white
-                    : (leg.isFlight ? AppColors.flight : Colors.amber.shade700),
-                width: 1.2,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: (leg.isFlight ? AppColors.flight : Colors.amber)
-                      .withValues(alpha: 0.35),
-                  blurRadius: isSelected || isHovered ? 8 : 4,
-                  offset: const Offset(0, 1),
+                    ? AppColors.flight
+                    : (_isDarkMode
+                        ? const Color(0xFF1E293B).withValues(alpha: 0.95)
+                        : Colors.white.withValues(alpha: 0.95)),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isSelected || isHovered
+                      ? Colors.white
+                      : (leg.isFlight ? AppColors.flight : Colors.amber.shade700),
+                  width: 1.2,
                 ),
-              ],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Sequence number on transition between locations
-                Container(
-                  width: 17,
-                  height: 17,
-                  decoration: BoxDecoration(
-                    color: isSelected || isHovered
-                        ? Colors.white
-                        : (leg.isFlight ? AppColors.flight : Colors.amber.shade800),
-                    shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: (leg.isFlight ? AppColors.flight : Colors.amber)
+                        .withValues(alpha: 0.35),
+                    blurRadius: isSelected || isHovered ? 8 : 4,
+                    offset: const Offset(0, 1),
                   ),
-                  child: Center(
-                    child: Text(
-                      '${leg.sequenceIndex}',
-                      style: TextStyle(
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.w900,
-                        color: isSelected || isHovered
-                            ? (leg.isFlight ? AppColors.flight : Colors.amber.shade800)
-                            : Colors.white,
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Sequence number on transition between locations
+                  Container(
+                    width: 17,
+                    height: 17,
+                    decoration: BoxDecoration(
+                      color: isSelected || isHovered
+                          ? Colors.white
+                          : (leg.isFlight ? AppColors.flight : Colors.amber.shade800),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        '${leg.sequenceIndex}',
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w900,
+                          color: isSelected || isHovered
+                              ? (leg.isFlight ? AppColors.flight : Colors.amber.shade800)
+                              : Colors.white,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 4),
-                Icon(
-                  leg.isFlight ? Icons.flight_rounded : Icons.directions_bus_rounded,
-                  size: 11,
-                  color: isSelected || isHovered
-                      ? Colors.white
-                      : (leg.isFlight ? AppColors.flight : Colors.amber.shade800),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  leg.moniker,
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.3,
+                  const SizedBox(width: 4),
+                  Icon(
+                    leg.isFlight ? Icons.flight_rounded : Icons.directions_bus_rounded,
+                    size: 11,
                     color: isSelected || isHovered
                         ? Colors.white
-                        : (_isDarkMode ? Colors.white : Colors.black87),
+                        : (leg.isFlight ? AppColors.flight : Colors.amber.shade800),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 4),
+                  Text(
+                    leg.moniker,
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.3,
+                      color: isSelected || isHovered
+                          ? Colors.white
+                          : (_isDarkMode ? Colors.white : Colors.black87),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -1503,6 +1516,7 @@ class _GoogleMapTileLayer extends StatelessWidget {
   final double canvasWidth;
   final double canvasHeight;
   final bool crossesPacific;
+  final double currentScale;
 
   static final Set<String> _failedUrls = {};
 
@@ -1512,13 +1526,15 @@ class _GoogleMapTileLayer extends StatelessWidget {
     required this.canvasWidth,
     required this.canvasHeight,
     required this.crossesPacific,
+    this.currentScale = 1.0,
   });
 
   @override
   Widget build(BuildContext context) {
-    const int zoom = 4;
-    const double worldTiles = 16.0;
-    const double worldPixels = 4096.0;
+    // Dynamic zoom level from 4 up to 8 based on current viewer scale
+    final int zoom = (4 + (math.log(math.max(currentScale, 0.25)) / math.ln2)).round().clamp(3, 8);
+    final double worldTiles = math.pow(2, zoom).toDouble();
+    final double worldPixels = worldTiles * 256.0;
 
     final minL = crossesPacific ? 70.0 : -130.0;
     final maxL = crossesPacific ? 260.0 : 160.0;
@@ -1772,128 +1788,13 @@ class _MapRoutePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    _drawCityAnchorsAndLeaderLines(canvas);
     _drawConnectingLegs(canvas);
-  }
-
-  void _drawCityAnchorsAndLeaderLines(Canvas canvas) {
-    final multiVisitCities = <String, GeoPoint>{};
-    for (final city in route.cities) {
-      if (city.totalVisitsToThisCity > 1) {
-        multiVisitCities[city.cityName.toLowerCase()] = city.coordinates;
-      }
-    }
-
-    // 1. Draw central geographic anchor beacons for multi-visit cities
-    for (final entry in multiVisitCities.entries) {
-      final anchor = projectCoord(entry.value);
-      final palette = CityColorHelper.getPaletteForCity(entry.key);
-
-      // Glowing outer halo
-      final haloPaint = Paint()
-        ..color = palette.gradient.first.withValues(alpha: isDarkMode ? 0.35 : 0.25)
-        ..style = PaintingStyle.fill;
-      canvas.drawCircle(anchor, 14.0, haloPaint);
-
-      final ringPaint = Paint()
-        ..color = palette.gradient.first.withValues(alpha: 0.85)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.8;
-      canvas.drawCircle(anchor, 8.0, ringPaint);
-
-      // Solid central pinpoint
-      final corePaint = Paint()
-        ..color = Colors.white
-        ..style = PaintingStyle.fill;
-      canvas.drawCircle(anchor, 4.0, corePaint);
-
-      final dotPaint = Paint()
-        ..color = palette.gradient.first
-        ..style = PaintingStyle.fill;
-      canvas.drawCircle(anchor, 2.0, dotPaint);
-
-      // Geographic Anchor Label
-      final textPainter = TextPainter(
-        text: TextSpan(
-          text: entry.key.toUpperCase(),
-          style: TextStyle(
-            fontSize: 9.5,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 1.2,
-            color: isDarkMode ? Colors.white.withValues(alpha: 0.9) : Colors.black87,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-
-      final textOffset = Offset(anchor.dx - textPainter.width / 2, anchor.dy - 24);
-      final bgRect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(textOffset.dx - 5, textOffset.dy - 2, textPainter.width + 10, textPainter.height + 4),
-        const Radius.circular(5),
-      );
-      canvas.drawRRect(
-        bgRect,
-        Paint()..color = (isDarkMode ? const Color(0xFF0F172A) : Colors.white).withValues(alpha: 0.9),
-      );
-      canvas.drawRRect(
-        bgRect,
-        Paint()
-          ..color = palette.gradient.first.withValues(alpha: 0.4)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 0.8,
-      );
-      textPainter.paint(canvas, textOffset);
-    }
-
-    // 2. Draw leader lines (stems) connecting anchor to each call out position
-    for (final city in route.cities) {
-      if (city.totalVisitsToThisCity > 1 && city.calloutOffset != Offset.zero) {
-        final anchor = projectCoord(city.coordinates);
-        final calloutTarget = anchor + city.calloutOffset;
-        final palette = CityColorHelper.getPaletteForCity(city.cityName);
-
-        final stemPaint = Paint()
-          ..color = palette.gradient.first.withValues(alpha: isDarkMode ? 0.75 : 0.6)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.8
-          ..strokeCap = StrokeCap.round;
-
-        _drawDashedLine(canvas, anchor, calloutTarget, stemPaint, dashLength: 6.0, gapLength: 4.0);
-
-        // Anchor termination dot
-        canvas.drawCircle(
-          anchor,
-          3.0,
-          Paint()..color = palette.gradient.first,
-        );
-      }
-    }
-  }
-
-  void _drawDashedLine(Canvas canvas, Offset p1, Offset p2, Paint paint,
-      {double dashLength = 6.0, double gapLength = 4.0}) {
-    final dx = p2.dx - p1.dx;
-    final dy = p2.dy - p1.dy;
-    final dist = math.sqrt(dx * dx + dy * dy);
-    if (dist == 0) return;
-
-    final dirX = dx / dist;
-    final dirY = dy / dist;
-
-    double current = 0.0;
-    while (current < dist) {
-      final start = Offset(p1.dx + dirX * current, p1.dy + dirY * current);
-      final endDist = math.min(current + dashLength, dist);
-      final end = Offset(p1.dx + dirX * endDist, p1.dy + dirY * endDist);
-      canvas.drawLine(start, end, paint);
-      current += dashLength + gapLength;
-    }
   }
 
   void _drawConnectingLegs(Canvas canvas) {
     for (final leg in route.legs) {
-      final p1 = projectCoord(leg.fromCity.coordinates) + leg.fromCity.calloutOffset;
-      final p2 = projectCoord(leg.toCity.coordinates) + leg.toCity.calloutOffset;
+      final p1 = projectCoord(leg.fromCity.coordinates);
+      final p2 = projectCoord(leg.toCity.coordinates);
 
       final dx = p2.dx - p1.dx;
       final dy = p2.dy - p1.dy;

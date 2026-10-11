@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/date_formatters.dart';
+import '../../core/utils/map_launcher_helper.dart';
 import '../../models/models.dart';
 import '../../state/trip_providers.dart';
 import '../common/add_activity_sheet.dart';
 import '../common/add_flight_sheet.dart';
+import '../common/modification_source_badge.dart';
 
 class FlightsView extends ConsumerWidget {
   final VoidCallback? onAddFlight;
@@ -36,11 +39,16 @@ class FlightsView extends ConsumerWidget {
     return Scaffold(
       backgroundColor: Colors.transparent,
       floatingActionButton: canEdit
-          ? FloatingActionButton.extended(
-              onPressed: onAddFlight ?? () => _openFlightSheet(context),
-              icon: const Icon(Icons.add),
-              label: const Text('Add Flight'),
-            )
+          ? (MediaQuery.sizeOf(context).width < 600
+              ? FloatingActionButton(
+                  onPressed: onAddFlight ?? () => _openFlightSheet(context),
+                  child: const Icon(Icons.add),
+                )
+              : FloatingActionButton.extended(
+                  onPressed: onAddFlight ?? () => _openFlightSheet(context),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add Flight'),
+                ))
           : null,
       body: flightsAsync.when(
         data: (flights) {
@@ -228,6 +236,12 @@ class _FlightCard extends ConsumerWidget {
                             ],
                           ),
                         ),
+                      if (flight.lastModifiedAt != null || flight.lastModifiedSource != null)
+                        ModificationSourceBadge(
+                          lastModifiedAt: flight.lastModifiedAt,
+                          lastModifiedSource: flight.lastModifiedSource,
+                          isCompact: true,
+                        ),
                       if (canEdit) ...[
                         PopupMenuButton<String>(
                           icon: const Icon(Icons.more_vert,
@@ -275,44 +289,72 @@ class _FlightCard extends ConsumerWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 // Origin
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      flight.departureAirport,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textPrimary,
+                Expanded(
+                  flex: 3,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      InkWell(
+                        onTap: () => MapLauncherHelper.openAddress(flight.departureAirport),
+                        borderRadius: BorderRadius.circular(4),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                flight.departureAirport,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(
+                              Icons.location_on_outlined,
+                              size: 14,
+                              color: AppColors.flight,
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      DateFormatters.dayHeader.format(flight.departureTime),
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
+                      const SizedBox(height: 2),
+                      Text(
+                        DateFormatters.dayHeader.format(flight.departureTime),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
                       ),
-                    ),
-                    Text(
-                      DateFormatters.time12.format(flight.departureTime),
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.flight,
+                      Text(
+                        DateFormatters.time12.format(flight.departureTime),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.flight,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
 
                 // Airplane Flight Graphic
                 Expanded(
+                  flex: 4,
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    padding: const EdgeInsets.symmetric(horizontal: 6.0),
                     child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
                           '${flight.duration.inHours}h ${flight.duration.inMinutes.remainder(60)}m',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
@@ -360,6 +402,8 @@ class _FlightCard extends ConsumerWidget {
                         const SizedBox(height: 4),
                         const Text(
                           'Non-stop',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: 11,
                             color: AppColors.textMuted,
@@ -371,34 +415,62 @@ class _FlightCard extends ConsumerWidget {
                 ),
 
                 // Destination
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      flight.arrivalAirport,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textPrimary,
+                Expanded(
+                  flex: 3,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      InkWell(
+                        onTap: () => MapLauncherHelper.openAddress(flight.arrivalAirport),
+                        borderRadius: BorderRadius.circular(4),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            const Icon(
+                              Icons.location_on_outlined,
+                              size: 14,
+                              color: AppColors.flight,
+                            ),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                flight.arrivalAirport,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.end,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      DateFormatters.dayHeader.format(flight.arrivalTime),
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
+                      const SizedBox(height: 2),
+                      Text(
+                        DateFormatters.dayHeader.format(flight.arrivalTime),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.end,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
                       ),
-                    ),
-                    Text(
-                      DateFormatters.time12.format(flight.arrivalTime),
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.flight,
+                      Text(
+                        DateFormatters.time12.format(flight.arrivalTime),
+                        textAlign: TextAlign.end,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.flight,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -445,6 +517,92 @@ class _FlightCard extends ConsumerWidget {
               ),
             ],
 
+            if (flight.links.isNotEmpty || flight.attachments.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  for (final link in flight.links)
+                    InkWell(
+                      onTap: () async {
+                        final uri = Uri.tryParse(link);
+                        if (uri != null && await canLaunchUrl(uri)) {
+                          await launchUrl(uri,
+                              mode: LaunchMode.externalApplication);
+                        }
+                      },
+                      borderRadius: BorderRadius.circular(4),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color:
+                              AppColors.primaryContainer.withValues(alpha: 0.6),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                              color: AppColors.primary.withValues(alpha: 0.2)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.link_rounded,
+                                size: 12, color: AppColors.primary),
+                            const SizedBox(width: 4),
+                            ConstrainedBox(
+                              constraints:
+                                  const BoxConstraints(maxWidth: 160),
+                              child: Text(
+                                link,
+                                style: const TextStyle(
+                                  fontSize: 10.5,
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  for (final att in flight.attachments)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.attach_file_rounded,
+                              size: 12, color: AppColors.textSecondary),
+                          const SizedBox(width: 4),
+                          ConstrainedBox(
+                            constraints:
+                                const BoxConstraints(maxWidth: 140),
+                            child: Text(
+                              att,
+                              style: const TextStyle(
+                                fontSize: 10.5,
+                                color: AppColors.textSecondary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ],
+
             // Airport Ground Transfers Section
             Builder(
               builder: (context) {
@@ -466,19 +624,24 @@ class _FlightCard extends ConsumerWidget {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.directions_subway_rounded, size: 16, color: AppColors.transport),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Airport Ground Transfers (${linkedTransfers.length})',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.transport,
+                        Expanded(
+                          child: Row(
+                            children: [
+                              const Icon(Icons.directions_subway_rounded, size: 16, color: AppColors.transport),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  'Airport Ground Transfers (${linkedTransfers.length})',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.transport,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                         if (canEdit)
                           InkWell(

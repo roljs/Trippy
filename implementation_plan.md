@@ -2,9 +2,9 @@
 
 This document tracks the technical implementation phases, architectural decisions, and verification status of the **Trippy** project, maintained in sync with [`SPEC.md`](./SPEC.md) and the codebase.
 
-**Current Overall Status**: **Active / Phase 1–9 Complete**  
+**Current Overall Status**: **Active / Phase 1–11 & Iterations #1–#19 Complete**  
 **Static Analysis**: `0 issues` (`flutter analyze`)  
-**Automated Tests**: `37/37 passed` (`flutter test`)
+**Automated Tests**: `172/172 passed` (`flutter test`)
 
 ---
 
@@ -198,6 +198,51 @@ This document tracks the technical implementation phases, architectural decision
 
 ---
 
+### Phase 10: Iteration #18 Enhancements [COMPLETE]
+- [x] **Calendar Itinerary Day Square Centering**:
+  - Implemented equal-flex architecture (`Expanded(flex: 1, Align(bottomCenter, ...))`, `mainLocation`, `Expanded(flex: 1, SizedBox())`) in [`CalendarItineraryView`](./lib/views/logistics/widgets/calendar_itinerary_view.dart).
+  - Main city rectangle remains vertically centered at 50% height regardless of whether secondary city labels appear above it.
+- [x] **Cross-Platform Clickable Address & Airport Map Icons**:
+  - Created [`MapLauncherHelper`](./lib/core/utils/map_launcher_helper.dart) resolving platform-appropriate map URLs:
+    - Mobile (Android): `geo:0,0?q=<encodedAddress>`
+    - Mobile (iOS): `https://maps.apple.com/?q=<encodedAddress>`
+    - Desktop / Web: `https://www.google.com/maps/search/?api=1&query=<encodedAddress>`
+  - Added interactive map icon buttons and location links across [`AddStaySheet`](./lib/views/common/add_stay_sheet.dart), [`AddFlightSheet`](./lib/views/common/add_flight_sheet.dart), [`AddActivitySheet`](./lib/views/common/add_activity_sheet.dart), [`StayCard`](./lib/views/stays/stays_view.dart), [`FlightCard`](./lib/views/flights/flights_view.dart), and [`ActivityCardWidget`](./lib/views/logistics/widgets/activity_card_widget.dart).
+- [x] **Notes, Links & Attachments on All Objects**:
+  - Extended domain models [`Activity`](./lib/models/activity.dart), [`Stay`](./lib/models/stay.dart), and [`Flight`](./lib/models/flight.dart) with `links` (`List<String>`) and `attachments` (`List<String>`) fields, constructors, copyWith, and serialization.
+  - Implemented reusable [`NotesAndAttachmentsSection`](./lib/views/common/notes_and_attachments_section.dart) supporting notes input, clickable link chips with external URL launcher and add/remove dialogs, and attachment chips with add/remove dialogs.
+  - Integrated into all edit sheets and displayed on all reservation and activity cards.
+- [x] **Android System Navigation Bar Overlap Fix**:
+  - Wrapped modal sheet content and edit dialogs in `SafeArea(top: false)` with safe bottom padding (`bottomInset + 16`).
+  - Guarantees bottom action buttons ("Save Changes", "Delete") are never obscured by Android system navigation bars or gesture pills.
+- [x] **Day Planner Mobile Declutter & Swipe Navigation**:
+  - On mobile phones (`!isWide`), removed floating bottom buttons for suggestions and map.
+  - Relocated suggestion bulb (`floating_suggestions_bulb`) and map button (`floating_map_button`) to the top bar alongside day selector controls with notification badges.
+  - Wrapped the single-day pane in `GestureDetector` to enable day-to-day navigation by swiping left (next day) and right (previous day).
+- [x] **Automated Tests**:
+  - Added [`test/views/iteration_18_enhancements_test.dart`](./test/views/iteration_18_enhancements_test.dart) covering all 5 requirements with 100% pass rate.
+  - Full suite verified: 162/162 tests passed with 0 analyzer issues.
+
+---
+
+### Phase 11: Iteration #19 Enhancements & Firestore Permissions Fix [COMPLETE]
+- [x] **Itinerary Map View Refinement**:
+  - Replaced rectangles with clean circular pins and non-occluding city title markers.
+  - Fixed zoom behavior with dynamic scaling factor keeping marker and label icons readable and consistently sized across zoom levels.
+  - Added floating stats button and dialog (`map_itinerary_stats_button`) displaying key metrics (flights count, flight hours, destinations, stays, days, activities count).
+- [x] **Day Planner Mobile FAB & Double-Tap Activity Addition**:
+  - Mobile screens (<600dp) render a dedicated `FloatingActionButton` without label for adding activities on the active day, removing redundant full-width button.
+  - Double-tap on any empty timeline hour slot in Day Planner triggers `AddActivitySheet` prefilled with that hour.
+  - Simplified "Add Flight", "Add Stay", and "Add Activity" buttons on mobile screens to icon-only FABs.
+- [x] **Save Changes / Permission Denied Fix (Android & Cloud Firestore)**:
+  - Root Cause: Iteration #18 added `links` and `attachments` lists to `Activity`, `Flight`, and `Stay` models. The local `firestore.rules` was updated to include them in the allowed keys list, but the rules had not been deployed to Cloud Firestore in production (`trippy-prod-4524f`). As a result, writes containing `links` and `attachments` violated `data.keys().hasOnly(allowed)` and were rejected by Firestore with `[cloud_firestore/permission-denied]`.
+  - Resolution: Successfully deployed updated `firestore.rules` containing `links` and `attachments` validation to Cloud Firestore via `firebase deploy --only firestore:rules`.
+- [x] **Automated Tests**:
+  - Added [`test/views/iteration_19_enhancements_test.dart`](./test/views/iteration_19_enhancements_test.dart) covering map stats dialog, mobile FAB, double-tap timeline, responsive FABs, and edit dialog validation.
+  - Full suite verified: 172/172 tests passed with 0 analyzer issues.
+
+---
+
 ## 2. File Structure & Component Map
 
 ```
@@ -242,6 +287,7 @@ Trippy/
     ├── views/stay_header_night_labels_test.dart # Outside on-top night labels tests
     ├── views/flights_management_test.dart     # Flight CRUD, flags, and stay synthesis tests
     ├── views/card_standardization_and_delete_test.dart # 3-dots menus, header linking & stay deletion tests
+    ├── views/iteration_18_enhancements_test.dart # Iteration 18 enhancements tests
     └── widget_test.dart                       # Full application widget test suite
 ```
 
@@ -259,7 +305,7 @@ flutter analyze
 ```powershell
 flutter test
 ```
-*Result: `All 37 tests passed!`*
+*Result: `All 162 tests passed!`*
 
 ---
 

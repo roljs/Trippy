@@ -40,8 +40,8 @@ void main() {
       expect(night2Finder, findsOneWidget);
 
       // Verify the stay header title and details are present inside the rectangle
-      expect(find.text('Grand Hyatt Tokyo'), findsOneWidget);
-      expect(find.text('HOTEL • 2N'), findsOneWidget);
+      // HOTEL • 2N badge removed as per Iteration #21
+      expect(find.text('HOTEL • 2N'), findsNothing);
 
       // Verify horizontal positions: Night 1 is centered in [0, 300] => ~150
       // Night 2 is centered in [300, 600] => ~450

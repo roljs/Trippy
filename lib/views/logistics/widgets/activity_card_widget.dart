@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/date_formatters.dart';
+import '../../../core/utils/map_launcher_helper.dart';
 import '../../../models/models.dart';
+import '../../common/modification_source_badge.dart';
 
 class ActivityCardWidget extends StatelessWidget {
   final Activity activity;
@@ -174,6 +177,14 @@ class ActivityCardWidget extends StatelessWidget {
                 ],
                 // Booking Status Badge
                 _BookingStatusPill(status: activity.bookingStatus),
+                if (activity.lastModifiedAt != null || activity.lastModifiedSource != null) ...[
+                  const SizedBox(width: 4),
+                  ModificationSourceBadge(
+                    lastModifiedAt: activity.lastModifiedAt,
+                    lastModifiedSource: activity.lastModifiedSource,
+                    isCompact: true,
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 8),
@@ -196,26 +207,36 @@ class ActivityCardWidget extends StatelessWidget {
             // Location
             if (activity.location != null && activity.location!.isNotEmpty) ...[
               const SizedBox(height: 4),
-              Row(
-                children: [
-                  const Icon(
-                    Icons.location_on_outlined,
-                    size: 13,
-                    color: AppColors.textMuted,
-                  ),
-                  const SizedBox(width: 3),
-                  Expanded(
-                    child: Text(
-                      activity.location!,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+              InkWell(
+                onTap: () => MapLauncherHelper.openAddress(activity.location!),
+                borderRadius: BorderRadius.circular(4),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.location_on_outlined,
+                      size: 13,
+                      color: AppColors.primary,
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 3),
+                    Expanded(
+                      child: Text(
+                        activity.location!,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(
+                      Icons.open_in_new_rounded,
+                      size: 11,
+                      color: AppColors.textMuted,
+                    ),
+                  ],
+                ),
               ),
             ],
 
@@ -255,6 +276,92 @@ class ActivityCardWidget extends StatelessWidget {
                 ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
+              ),
+            ],
+
+            // Links & Attachments
+            if (activity.links.isNotEmpty || activity.attachments.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  for (final link in activity.links)
+                    InkWell(
+                      onTap: () async {
+                        final uri = Uri.tryParse(link);
+                        if (uri != null && await canLaunchUrl(uri)) {
+                          await launchUrl(uri,
+                              mode: LaunchMode.externalApplication);
+                        }
+                      },
+                      borderRadius: BorderRadius.circular(4),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryContainer.withValues(alpha: 0.6),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                              color: AppColors.primary.withValues(alpha: 0.2)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.link_rounded,
+                                size: 11, color: AppColors.primary),
+                            const SizedBox(width: 3),
+                            ConstrainedBox(
+                              constraints:
+                                  const BoxConstraints(maxWidth: 140),
+                              child: Text(
+                                link,
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  for (final att in activity.attachments)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.attach_file_rounded,
+                              size: 11, color: AppColors.textSecondary),
+                          const SizedBox(width: 3),
+                          ConstrainedBox(
+                            constraints:
+                                const BoxConstraints(maxWidth: 130),
+                            child: Text(
+                              att,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: AppColors.textSecondary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
               ),
             ],
           ],

@@ -3,9 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/airport_timezone_helper.dart';
 import '../../core/utils/date_formatters.dart';
+import '../../core/utils/map_launcher_helper.dart';
 import '../../models/models.dart';
 import '../../state/trip_providers.dart';
 import 'add_activity_sheet.dart';
+import 'notes_and_attachments_section.dart';
+import 'modification_source_badge.dart';
 
 class AddFlightSheet extends ConsumerStatefulWidget {
   final Flight? flightToEdit;
@@ -25,6 +28,10 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
   final _gateController = TextEditingController();
   final _seatController = TextEditingController();
   final _bookingRefController = TextEditingController();
+  final _notesController = TextEditingController();
+  List<String> _links = [];
+  List<String> _attachments = [];
+  bool _isSaving = false;
 
   late DateTime _depDateTime;
   late DateTime _arrDateTime;
@@ -46,6 +53,9 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
       _gateController.text = edit.gate ?? '';
       _seatController.text = edit.seat ?? '';
       _bookingRefController.text = edit.bookingRef ?? '';
+      _notesController.text = edit.notes ?? '';
+      _links = edit.links.toList();
+      _attachments = edit.attachments.toList();
       _depDateTime = edit.departureTime;
       _arrDateTime = edit.arrivalTime;
     } else {
@@ -103,17 +113,22 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
       arrivalAirport: _destController.text.trim(),
     );
 
-    return Container(
-      padding: EdgeInsets.only(
-        top: 20,
-        left: 20,
-        right: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-      ),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final effectiveBottomPadding = bottomInset + 16;
+
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: EdgeInsets.only(
+          top: 20,
+          left: 20,
+          right: 20,
+          bottom: effectiveBottomPadding,
+        ),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -122,13 +137,27 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  isEditing ? 'Edit Flight' : 'Add Flight Booking',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isEditing ? 'Edit Flight' : 'Add Flight Booking',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    if (isEditing &&
+                        (widget.flightToEdit!.lastModifiedAt != null ||
+                            widget.flightToEdit!.lastModifiedSource != null)) ...[
+                      const SizedBox(height: 4),
+                      ModificationSourceBadge(
+                        lastModifiedAt: widget.flightToEdit!.lastModifiedAt,
+                        lastModifiedSource: widget.flightToEdit!.lastModifiedSource,
+                      ),
+                    ],
+                  ],
                 ),
                 IconButton(
                   icon: const Icon(Icons.close),
@@ -169,9 +198,15 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
                   child: TextField(
                     controller: _originController,
                     onChanged: (_) => setState(() {}),
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Departure Airport',
                       hintText: 'e.g. SFO',
+                      prefixIcon: IconButton(
+                        icon: const Icon(Icons.location_on_outlined, size: 18),
+                        tooltip: 'Open in Map',
+                        onPressed: () =>
+                            MapLauncherHelper.openAddress(_originController.text),
+                      ),
                     ),
                   ),
                 ),
@@ -180,9 +215,15 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
                   child: TextField(
                     controller: _destController,
                     onChanged: (_) => setState(() {}),
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Arrival Airport',
                       hintText: 'e.g. HND',
+                      prefixIcon: IconButton(
+                        icon: const Icon(Icons.location_on_outlined, size: 18),
+                        tooltip: 'Open in Map',
+                        onPressed: () =>
+                            MapLauncherHelper.openAddress(_destController.text),
+                      ),
                     ),
                   ),
                 ),
@@ -411,20 +452,26 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.directions_subway_rounded, size: 16, color: AppColors.transport),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Linked Airport Ground Transfers (${linkedTransfers.length})',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.transport,
+                        Expanded(
+                          child: Row(
+                            children: [
+                              const Icon(Icons.directions_subway_rounded, size: 16, color: AppColors.transport),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  'Linked Airport Ground Transfers (${linkedTransfers.length})',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.transport,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
+                        const SizedBox(width: 6),
                         if (widget.flightToEdit != null)
                           InkWell(
                             onTap: () => _showLinkTransferDialog(context, ref, widget.flightToEdit!, allActivities),
@@ -708,6 +755,18 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
               ),
             ],
 
+            const SizedBox(height: 14),
+            NotesAndAttachmentsSection(
+              notesController: _notesController,
+              links: _links,
+              onLinksChanged: (updated) => setState(() => _links = updated),
+              attachments: _attachments,
+              tripId: currentTripId,
+              onAttachmentsChanged: (updated) =>
+                  setState(() => _attachments = updated),
+            ),
+            const SizedBox(height: 18),
+
             Row(
               children: [
                 if (isEditing) ...[
@@ -748,137 +807,167 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
                 ],
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () async {
-                      if (_airlineController.text.trim().isEmpty) return;
+                    onPressed: _isSaving ? null : () async {
+                      if (_airlineController.text.trim().isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Please enter an airline name.')),
+                        );
+                        return;
+                      }
 
                       final newFlightId = widget.flightToEdit?.id ??
                           'flt_${DateTime.now().millisecondsSinceEpoch}';
-
-
 
                       final targetTripId = activeTrip?.id ?? widget.flightToEdit?.tripId ?? '';
                       final List<String> currentLinkedIds = [
                         ...(widget.flightToEdit?.linkedActivityIds ?? const <String>[]),
                       ];
 
-                      if (_createDepartureTransfer) {
-                        final depTransferTime = _depDateTime.subtract(const Duration(hours: 2));
-                        final h = depTransferTime.hour.toString().padLeft(2, '0');
-                        final m = depTransferTime.minute.toString().padLeft(2, '0');
-                        final depName = _originController.text.trim().isEmpty
-                            ? 'Departure'
-                            : _originController.text.trim();
+                      setState(() => _isSaving = true);
+                      try {
+                        if (_createDepartureTransfer) {
+                          final depTransferTime = _depDateTime.subtract(const Duration(hours: 2));
+                          final h = depTransferTime.hour.toString().padLeft(2, '0');
+                          final m = depTransferTime.minute.toString().padLeft(2, '0');
+                          final depName = _originController.text.trim().isEmpty
+                              ? 'Departure'
+                              : _originController.text.trim();
 
-                        if (depXfers.isNotEmpty) {
-                          // Update existing departure transfer without duplicate
-                          final existingDep = depXfers.first;
-                          await repo.updateActivity(existingDep.copyWith(
-                            flightId: newFlightId,
-                            date: DateTime(depTransferTime.year, depTransferTime.month, depTransferTime.day),
-                            startTime: '$h:$m',
-                            title: 'Transport: Hotel to $depName Airport',
-                            location: '$depName Airport',
-                            notes: 'Ground transfer to airport for flight ${_airlineController.text.trim()} ${_flightNumController.text.trim()}',
-                          ));
-                          if (!currentLinkedIds.contains(existingDep.id)) {
-                            currentLinkedIds.add(existingDep.id);
+                          if (depXfers.isNotEmpty) {
+                            // Update existing departure transfer without duplicate
+                            final existingDep = depXfers.first;
+                            await repo.updateActivity(existingDep.copyWith(
+                              flightId: newFlightId,
+                              date: DateTime(depTransferTime.year, depTransferTime.month, depTransferTime.day),
+                              startTime: '$h:$m',
+                              title: 'Transport: Hotel to $depName Airport',
+                              location: '$depName Airport',
+                              notes: 'Ground transfer to airport for flight ${_airlineController.text.trim()} ${_flightNumController.text.trim()}',
+                            ));
+                            if (!currentLinkedIds.contains(existingDep.id)) {
+                              currentLinkedIds.add(existingDep.id);
+                            }
+                          } else {
+                            final depActId = 'act_${DateTime.now().millisecondsSinceEpoch}_dep_xfer';
+                            final act = Activity(
+                              id: depActId,
+                              tripId: targetTripId,
+                              flightId: newFlightId,
+                              date: DateTime(depTransferTime.year, depTransferTime.month, depTransferTime.day),
+                              startTime: '$h:$m',
+                              title: 'Transport: Hotel to $depName Airport',
+                              category: ActivityCategory.transport,
+                              location: '$depName Airport',
+                              notes: 'Ground transfer to airport for flight ${_airlineController.text.trim()} ${_flightNumController.text.trim()}',
+                              bookingStatus: BookingStatus.planned,
+                            );
+                            await repo.addActivity(act);
+                            currentLinkedIds.add(depActId);
                           }
+                        }
+
+                        if (_createArrivalTransfer) {
+                          final arrTransferTime = _arrDateTime.add(const Duration(minutes: 45));
+                          final h = arrTransferTime.hour.toString().padLeft(2, '0');
+                          final m = arrTransferTime.minute.toString().padLeft(2, '0');
+                          final arrName = _destController.text.trim().isEmpty
+                              ? 'Arrival'
+                              : _destController.text.trim();
+
+                          if (arrXfers.isNotEmpty) {
+                            // Update existing arrival transfer without duplicate
+                            final existingArr = arrXfers.first;
+                            await repo.updateActivity(existingArr.copyWith(
+                              flightId: newFlightId,
+                              date: DateTime(arrTransferTime.year, arrTransferTime.month, arrTransferTime.day),
+                              startTime: '$h:$m',
+                              title: 'Transport: $arrName Airport to Hotel',
+                              location: '$arrName Airport',
+                              notes: 'Ground transfer from airport to hotel after flight ${_airlineController.text.trim()} ${_flightNumController.text.trim()}',
+                            ));
+                            if (!currentLinkedIds.contains(existingArr.id)) {
+                              currentLinkedIds.add(existingArr.id);
+                            }
+                          } else {
+                            final arrActId = 'act_${DateTime.now().millisecondsSinceEpoch + 1}_arr_xfer';
+                            final act = Activity(
+                              id: arrActId,
+                              tripId: targetTripId,
+                              flightId: newFlightId,
+                              date: DateTime(arrTransferTime.year, arrTransferTime.month, arrTransferTime.day),
+                              startTime: '$h:$m',
+                              title: 'Transport: $arrName Airport to Hotel',
+                              category: ActivityCategory.transport,
+                              location: '$arrName Airport',
+                              notes: 'Ground transfer from airport to hotel after flight ${_airlineController.text.trim()} ${_flightNumController.text.trim()}',
+                              bookingStatus: BookingStatus.planned,
+                            );
+                            await repo.addActivity(act);
+                            currentLinkedIds.add(arrActId);
+                          }
+                        }
+
+                        final finalLinkedIds = currentLinkedIds.toSet().toList();
+
+                        final flight = Flight(
+                          id: newFlightId,
+                          tripId: targetTripId,
+                          airline: _airlineController.text.trim(),
+                          flightNumber: _flightNumController.text.trim(),
+                          departureAirport: _originController.text.trim(),
+                          arrivalAirport: _destController.text.trim(),
+                          departureTime: _depDateTime,
+                          arrivalTime: _arrDateTime,
+                          isOvernight: _arrDateTime.day != _depDateTime.day,
+                          terminal: _terminalController.text.trim().isEmpty
+                              ? null
+                              : _terminalController.text.trim(),
+                          gate: _gateController.text.trim().isEmpty
+                              ? null
+                              : _gateController.text.trim(),
+                          seat: _seatController.text.trim().isEmpty
+                              ? null
+                              : _seatController.text.trim(),
+                          bookingRef: _bookingRefController.text.trim().isEmpty
+                              ? null
+                              : _bookingRefController.text.trim(),
+                          notes: _notesController.text.trim().isEmpty
+                              ? null
+                              : _notesController.text.trim(),
+                          links: _links,
+                          attachments: _attachments,
+                          linkedActivityIds: finalLinkedIds,
+                        );
+
+                        if (isEditing) {
+                          await repo.updateFlight(flight);
                         } else {
-                          final depActId = 'act_${DateTime.now().millisecondsSinceEpoch}_dep_xfer';
-                          final act = Activity(
-                            id: depActId,
-                            tripId: targetTripId,
-                            flightId: newFlightId,
-                            date: DateTime(depTransferTime.year, depTransferTime.month, depTransferTime.day),
-                            startTime: '$h:$m',
-                            title: 'Transport: Hotel to $depName Airport',
-                            category: ActivityCategory.transport,
-                            location: '$depName Airport',
-                            notes: 'Ground transfer to airport for flight ${_airlineController.text.trim()} ${_flightNumController.text.trim()}',
-                            bookingStatus: BookingStatus.planned,
+                          await repo.addFlight(flight);
+                        }
+
+                        if (context.mounted) Navigator.pop(context);
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Failed to save flight: $e'),
+                              backgroundColor: Colors.red.shade700,
+                            ),
                           );
-                          await repo.addActivity(act);
-                          currentLinkedIds.add(depActId);
+                        }
+                      } finally {
+                        if (mounted) {
+                          setState(() => _isSaving = false);
                         }
                       }
-
-                      if (_createArrivalTransfer) {
-                        final arrTransferTime = _arrDateTime.add(const Duration(minutes: 45));
-                        final h = arrTransferTime.hour.toString().padLeft(2, '0');
-                        final m = arrTransferTime.minute.toString().padLeft(2, '0');
-                        final arrName = _destController.text.trim().isEmpty
-                            ? 'Arrival'
-                            : _destController.text.trim();
-
-                        if (arrXfers.isNotEmpty) {
-                          // Update existing arrival transfer without duplicate
-                          final existingArr = arrXfers.first;
-                          await repo.updateActivity(existingArr.copyWith(
-                            flightId: newFlightId,
-                            date: DateTime(arrTransferTime.year, arrTransferTime.month, arrTransferTime.day),
-                            startTime: '$h:$m',
-                            title: 'Transport: $arrName Airport to Hotel',
-                            location: '$arrName Airport',
-                            notes: 'Ground transfer from airport to hotel after flight ${_airlineController.text.trim()} ${_flightNumController.text.trim()}',
-                          ));
-                          if (!currentLinkedIds.contains(existingArr.id)) {
-                            currentLinkedIds.add(existingArr.id);
-                          }
-                        } else {
-                          final arrActId = 'act_${DateTime.now().millisecondsSinceEpoch + 1}_arr_xfer';
-                          final act = Activity(
-                            id: arrActId,
-                            tripId: targetTripId,
-                            flightId: newFlightId,
-                            date: DateTime(arrTransferTime.year, arrTransferTime.month, arrTransferTime.day),
-                            startTime: '$h:$m',
-                            title: 'Transport: $arrName Airport to Hotel',
-                            category: ActivityCategory.transport,
-                            location: '$arrName Airport',
-                            notes: 'Ground transfer from airport to hotel after flight ${_airlineController.text.trim()} ${_flightNumController.text.trim()}',
-                            bookingStatus: BookingStatus.planned,
-                          );
-                          await repo.addActivity(act);
-                          currentLinkedIds.add(arrActId);
-                        }
-                      }
-
-                      final finalLinkedIds = currentLinkedIds.toSet().toList();
-
-                      final flight = Flight(
-                        id: newFlightId,
-                        tripId: targetTripId,
-                        airline: _airlineController.text.trim(),
-                        flightNumber: _flightNumController.text.trim(),
-                        departureAirport: _originController.text.trim(),
-                        arrivalAirport: _destController.text.trim(),
-                        departureTime: _depDateTime,
-                        arrivalTime: _arrDateTime,
-                        isOvernight: _arrDateTime.day != _depDateTime.day,
-                        terminal: _terminalController.text.trim().isEmpty
-                            ? null
-                            : _terminalController.text.trim(),
-                        gate: _gateController.text.trim().isEmpty
-                            ? null
-                            : _gateController.text.trim(),
-                        seat: _seatController.text.trim().isEmpty
-                            ? null
-                            : _seatController.text.trim(),
-                        bookingRef: _bookingRefController.text.trim().isEmpty
-                            ? null
-                            : _bookingRefController.text.trim(),
-                        linkedActivityIds: finalLinkedIds,
-                      );
-
-                      if (isEditing) {
-                        await repo.updateFlight(flight);
-                      } else {
-                        await repo.addFlight(flight);
-                      }
-
-                      if (context.mounted) Navigator.pop(context);
                     },
-                    child: Text(isEditing ? 'Save Changes' : 'Add Flight'),
+                    child: _isSaving
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : Text(isEditing ? 'Save Changes' : 'Add Flight'),
                   ),
                 ),
               ],
@@ -886,7 +975,8 @@ class _AddFlightSheetState extends ConsumerState<AddFlightSheet> {
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 
   void _showLinkTransferDialog(BuildContext context, WidgetRef ref, Flight flight, List<Activity> activities) {

@@ -118,7 +118,7 @@ class DayColumnWidget extends StatelessWidget {
                               borderRadius: BorderRadius.circular(5),
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 4, vertical: 1.5),
+                                    horizontal: 3, vertical: 1),
                                 decoration: BoxDecoration(
                                   color: isToday
                                       ? Colors.white.withValues(alpha: 0.25)

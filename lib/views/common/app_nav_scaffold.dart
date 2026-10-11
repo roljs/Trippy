@@ -156,6 +156,7 @@ class _AppNavScaffoldState extends ConsumerState<AppNavScaffold> {
     final role = ref.watch(activeTripRoleProvider);
     final canEdit = ref.watch(canEditActiveTripProvider);
     final currentIndex = ref.watch(navTabIndexProvider);
+    final isMobile = MediaQuery.sizeOf(context).width < 600;
 
     return Scaffold(
       appBar: currentIndex == 5 // Dashboard has its own app bar
@@ -220,7 +221,9 @@ class _AppNavScaffoldState extends ConsumerState<AppNavScaffold> {
                 ],
               ),
               actions: [
-                if (activeTrip != null) ...[
+                // Iteration 16: On mobile screens, remove Trip code with sharing button
+                // to avoid truncating trip name when UI real estate is limited
+                if (activeTrip != null && !isMobile) ...[
                   // Trip Code Quick Badge
                   ActionChip(
                     avatar: const Icon(Icons.share_rounded, size: 14),
@@ -287,7 +290,7 @@ class _AppNavScaffoldState extends ConsumerState<AppNavScaffold> {
           BottomNavigationBarItem(
             icon: Icon(Icons.view_agenda_outlined),
             activeIcon: Icon(Icons.view_agenda_rounded),
-            label: 'Day Planner',
+            label: 'Day',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.calendar_view_week_rounded),

@@ -18,7 +18,11 @@ class Flight {
   final String? seat;
   final String? bookingRef;
   final String? notes;
+  final List<String> links;
+  final List<String> attachments;
   final List<String> linkedActivityIds;
+  final DateTime? lastModifiedAt;
+  final String? lastModifiedSource; // 'ui' or 'mcp'
 
   const Flight({
     required this.id,
@@ -38,8 +42,15 @@ class Flight {
     this.seat,
     this.bookingRef,
     this.notes,
+    this.links = const [],
+    this.attachments = const [],
     this.linkedActivityIds = const [],
+    this.lastModifiedAt,
+    this.lastModifiedSource,
   }) : isNightStay = (isMainArrival || isMainDeparture) ? false : isNightStay;
+
+  bool get isModifiedByMcp => lastModifiedSource?.toLowerCase() == 'mcp';
+  bool get isModifiedByUi => lastModifiedSource == null || lastModifiedSource?.toLowerCase() == 'ui';
 
   /// True if the flight spans into the next calendar day
   bool get spansAcrossDays {
@@ -75,7 +86,11 @@ class Flight {
     String? seat,
     String? bookingRef,
     String? notes,
+    List<String>? links,
+    List<String>? attachments,
     List<String>? linkedActivityIds,
+    DateTime? lastModifiedAt,
+    String? lastModifiedSource,
   }) {
     final bool explicitNightStay = isNightStay == true;
     final bool newArrival = explicitNightStay ? false : (isMainArrival ?? this.isMainArrival);
@@ -100,7 +115,11 @@ class Flight {
       seat: seat ?? this.seat,
       bookingRef: bookingRef ?? this.bookingRef,
       notes: notes ?? this.notes,
+      links: links ?? this.links,
+      attachments: attachments ?? this.attachments,
       linkedActivityIds: linkedActivityIds ?? this.linkedActivityIds,
+      lastModifiedAt: lastModifiedAt ?? this.lastModifiedAt,
+      lastModifiedSource: lastModifiedSource ?? this.lastModifiedSource,
     );
   }
 
@@ -123,7 +142,11 @@ class Flight {
       'seat': seat,
       'bookingRef': bookingRef,
       'notes': notes,
+      'links': links,
+      'attachments': attachments,
       'linkedActivityIds': linkedActivityIds,
+      if (lastModifiedAt != null) 'lastModifiedAt': lastModifiedAt!.toIso8601String(),
+      if (lastModifiedSource != null) 'lastModifiedSource': lastModifiedSource,
     };
   }
 
@@ -146,10 +169,22 @@ class Flight {
       seat: map['seat'] as String?,
       bookingRef: map['bookingRef'] as String?,
       notes: map['notes'] as String?,
+      links: (map['links'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      attachments: (map['attachments'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
       linkedActivityIds: (map['linkedActivityIds'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
           const [],
+      lastModifiedAt: map['lastModifiedAt'] != null
+          ? DateTime.tryParse(map['lastModifiedAt'].toString())
+          : null,
+      lastModifiedSource: map['lastModifiedSource'] as String?,
     );
   }
 }

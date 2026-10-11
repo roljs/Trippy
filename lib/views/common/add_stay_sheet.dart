@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/date_formatters.dart';
+import '../../core/utils/map_launcher_helper.dart';
 import '../../models/models.dart';
 import '../../state/trip_providers.dart';
 import 'add_activity_sheet.dart';
+import 'notes_and_attachments_section.dart';
+import 'modification_source_badge.dart';
 
 class AddStaySheet extends ConsumerStatefulWidget {
   final Stay? stayToEdit;
@@ -27,6 +30,9 @@ class _AddStaySheetState extends ConsumerState<AddStaySheet> {
   final _addressController = TextEditingController();
   final _confirmationController = TextEditingController();
   final _notesController = TextEditingController();
+  List<String> _links = [];
+  List<String> _attachments = [];
+  bool _isSaving = false;
 
   // Overnight Flight fields
   final _flightAirlineController = TextEditingController();
@@ -52,6 +58,8 @@ class _AddStaySheetState extends ConsumerState<AddStaySheet> {
       _addressController.text = edit.address ?? '';
       _confirmationController.text = edit.confirmationCode ?? '';
       _notesController.text = edit.notes ?? '';
+      _links = edit.links.toList();
+      _attachments = edit.attachments.toList();
       _checkInDate = edit.checkInDate;
       _checkOutDate = edit.checkOutDate;
       _checkInTime = edit.checkInTime ?? '15:00';
@@ -111,17 +119,22 @@ class _AddStaySheetState extends ConsumerState<AddStaySheet> {
       _createCheckInOutActivities = (hasLinkedCheckIn || hasLinkedCheckOut);
     }
 
-    return Container(
-      padding: EdgeInsets.only(
-        top: 20,
-        left: 20,
-        right: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-      ),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final effectiveBottomPadding = bottomInset + 16;
+
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: EdgeInsets.only(
+          top: 20,
+          left: 20,
+          right: 20,
+          bottom: effectiveBottomPadding,
+        ),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -130,13 +143,27 @@ class _AddStaySheetState extends ConsumerState<AddStaySheet> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  isEditing ? 'Edit Stay / Transition' : 'Add Stay / Transition',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isEditing ? 'Edit Stay / Transition' : 'Add Stay / Transition',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    if (isEditing &&
+                        (widget.stayToEdit!.lastModifiedAt != null ||
+                            widget.stayToEdit!.lastModifiedSource != null)) ...[
+                      const SizedBox(height: 4),
+                      ModificationSourceBadge(
+                        lastModifiedAt: widget.stayToEdit!.lastModifiedAt,
+                        lastModifiedSource: widget.stayToEdit!.lastModifiedSource,
+                      ),
+                    ],
+                  ],
                 ),
                 IconButton(
                   icon: const Icon(Icons.close),
@@ -205,7 +232,7 @@ class _AddStaySheetState extends ConsumerState<AddStaySheet> {
                 style: const TextStyle(fontSize: 13),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
 
             if (!isOvernightFlight) ...[
               // Hotel / Rental Fields
@@ -219,10 +246,14 @@ class _AddStaySheetState extends ConsumerState<AddStaySheet> {
               const SizedBox(height: 12),
               TextField(
                 controller: _addressController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Address',
                   hintText: 'e.g. 6-10-3 Roppongi, Minato City',
-                  prefixIcon: Icon(Icons.location_on_outlined, size: 18),
+                  prefixIcon: IconButton(
+                    icon: const Icon(Icons.location_on_outlined, size: 18),
+                    tooltip: 'Open in Map',
+                    onPressed: () => MapLauncherHelper.openAddress(_addressController.text),
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
@@ -303,15 +334,6 @@ class _AddStaySheetState extends ConsumerState<AddStaySheet> {
             ],
             const SizedBox(height: 12),
 
-            TextField(
-              controller: _notesController,
-              maxLines: 2,
-              decoration: const InputDecoration(
-                labelText: 'Notes',
-                hintText: 'e.g. Late arrival confirmed with front desk',
-              ),
-            ),
-            const SizedBox(height: 14),
 
             // Linked Check-in / Check-out Activities Section (shown when editing or when linked activities exist)
             if (linkedActivities.isNotEmpty) ...[
@@ -492,7 +514,7 @@ class _AddStaySheetState extends ConsumerState<AddStaySheet> {
             // Option to auto-create check-in and check-out activities when adding a new stay
             if (!isEditing && !isOvernightFlight) ...[
               Container(
-                margin: const EdgeInsets.only(bottom: 16),
+                margin: const EdgeInsets.only(bottom: 10),
                 decoration: BoxDecoration(
                   color: _createCheckInOutActivities
                       ? AppColors.stayContainer.withValues(alpha: 0.35)
@@ -528,6 +550,18 @@ class _AddStaySheetState extends ConsumerState<AddStaySheet> {
                 ),
               ),
             ],
+
+            const SizedBox(height: 8),
+            NotesAndAttachmentsSection(
+              notesController: _notesController,
+              links: _links,
+              onLinksChanged: (updated) => setState(() => _links = updated),
+              attachments: _attachments,
+              tripId: activeTrip.id,
+              onAttachmentsChanged: (updated) =>
+                  setState(() => _attachments = updated),
+            ),
+            const SizedBox(height: 12),
 
             // Action Buttons
             Row(
@@ -568,12 +602,21 @@ class _AddStaySheetState extends ConsumerState<AddStaySheet> {
                 ],
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () async {
+                    onPressed: _isSaving ? null : () async {
                       final name = isOvernightFlight
                           ? 'Flight ${_flightNumController.text.trim()} (Overnight)'
                           : _nameController.text.trim();
 
-                      if (name.isEmpty) return;
+                      if (name.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(isOvernightFlight
+                                ? 'Please enter a flight number.'
+                                : 'Please enter a stay name.'),
+                          ),
+                        );
+                        return;
+                      }
 
                       Flight? overnightFlightObj;
                       if (isOvernightFlight) {
@@ -609,140 +652,164 @@ class _AddStaySheetState extends ConsumerState<AddStaySheet> {
                       final initialLinkedActivityIds =
                           List<String>.from(widget.stayToEdit?.linkedActivityIds ?? []);
 
-                      if (!isOvernightFlight) {
-                        // 1. Check-In: update existing (always synced) or create new (when adding new stay)
-                        if (checkInActs.isNotEmpty) {
-                          final existingCheckIn = checkInActs.first;
-                          await repo.updateActivity(existingCheckIn.copyWith(
-                            stayId: stayId,
-                            date: _checkInDate,
-                            startTime: _checkInTime,
-                            title: 'Check-in: $name',
-                            location: _addressController.text.trim().isEmpty
-                                ? name
-                                : _addressController.text.trim(),
-                            bookingStatus: BookingStatus.booked,
-                            confirmationRef: _confirmationController.text.trim().isEmpty
-                                ? null
-                                : _confirmationController.text.trim(),
-                            notes: _notesController.text.trim().isEmpty
-                                ? null
-                                : _notesController.text.trim(),
-                          ));
-                          if (!initialLinkedActivityIds.contains(existingCheckIn.id)) {
-                            initialLinkedActivityIds.add(existingCheckIn.id);
+                      setState(() => _isSaving = true);
+                      try {
+                        if (!isOvernightFlight) {
+                          // 1. Check-In: update existing (always synced) or create new (when adding new stay)
+                          if (checkInActs.isNotEmpty) {
+                            final existingCheckIn = checkInActs.first;
+                            await repo.updateActivity(existingCheckIn.copyWith(
+                              stayId: stayId,
+                              date: _checkInDate,
+                              startTime: _checkInTime,
+                              title: 'Check-in: $name',
+                              location: _addressController.text.trim().isEmpty
+                                  ? name
+                                  : _addressController.text.trim(),
+                              bookingStatus: BookingStatus.booked,
+                              confirmationRef: _confirmationController.text.trim().isEmpty
+                                  ? null
+                                  : _confirmationController.text.trim(),
+                              notes: _notesController.text.trim().isEmpty
+                                  ? null
+                                  : _notesController.text.trim(),
+                            ));
+                            if (!initialLinkedActivityIds.contains(existingCheckIn.id)) {
+                              initialLinkedActivityIds.add(existingCheckIn.id);
+                            }
+                          } else if (!isEditing && _createCheckInOutActivities) {
+                            final inActId = 'act_${DateTime.now().millisecondsSinceEpoch}_in';
+                            final checkInAct = Activity(
+                              id: inActId,
+                              tripId: activeTrip.id,
+                              date: _checkInDate,
+                              startTime: _checkInTime,
+                              title: 'Check-in: $name',
+                              category: ActivityCategory.stay,
+                              location: _addressController.text.trim().isEmpty
+                                  ? name
+                                  : _addressController.text.trim(),
+                              bookingStatus: BookingStatus.booked,
+                              confirmationRef: _confirmationController.text.trim().isEmpty
+                                  ? null
+                                  : _confirmationController.text.trim(),
+                              notes: _notesController.text.trim().isEmpty
+                                  ? null
+                                  : _notesController.text.trim(),
+                              stayId: stayId,
+                            );
+                            await repo.addActivity(checkInAct);
+                            if (!initialLinkedActivityIds.contains(inActId)) {
+                              initialLinkedActivityIds.add(inActId);
+                            }
                           }
-                        } else if (!isEditing && _createCheckInOutActivities) {
-                          final inActId = 'act_${DateTime.now().millisecondsSinceEpoch}_in';
-                          final checkInAct = Activity(
-                            id: inActId,
-                            tripId: activeTrip.id,
-                            date: _checkInDate,
-                            startTime: _checkInTime,
-                            title: 'Check-in: $name',
-                            category: ActivityCategory.stay,
-                            location: _addressController.text.trim().isEmpty
-                                ? name
-                                : _addressController.text.trim(),
-                            bookingStatus: BookingStatus.booked,
-                            confirmationRef: _confirmationController.text.trim().isEmpty
-                                ? null
-                                : _confirmationController.text.trim(),
-                            notes: _notesController.text.trim().isEmpty
-                                ? null
-                                : _notesController.text.trim(),
-                            stayId: stayId,
-                          );
-                          await repo.addActivity(checkInAct);
-                          if (!initialLinkedActivityIds.contains(inActId)) {
-                            initialLinkedActivityIds.add(inActId);
+
+                          // 2. Check-Out: update existing (always synced) or create new (when adding new stay)
+                          if (checkOutActs.isNotEmpty) {
+                            final existingCheckOut = checkOutActs.first;
+                            await repo.updateActivity(existingCheckOut.copyWith(
+                              stayId: stayId,
+                              date: _checkOutDate,
+                              startTime: _checkOutTime,
+                              title: 'Check-out: $name',
+                              location: _addressController.text.trim().isEmpty
+                                  ? name
+                                  : _addressController.text.trim(),
+                              bookingStatus: BookingStatus.booked,
+                              confirmationRef: _confirmationController.text.trim().isEmpty
+                                  ? null
+                                  : _confirmationController.text.trim(),
+                              notes: _notesController.text.trim().isEmpty
+                                  ? null
+                                  : _notesController.text.trim(),
+                            ));
+                            if (!initialLinkedActivityIds.contains(existingCheckOut.id)) {
+                              initialLinkedActivityIds.add(existingCheckOut.id);
+                            }
+                          } else if (!isEditing && _createCheckInOutActivities) {
+                            final outActId = 'act_${DateTime.now().millisecondsSinceEpoch + 1}_out';
+                            final checkOutAct = Activity(
+                              id: outActId,
+                              tripId: activeTrip.id,
+                              date: _checkOutDate,
+                              startTime: _checkOutTime,
+                              title: 'Check-out: $name',
+                              category: ActivityCategory.stay,
+                              location: _addressController.text.trim().isEmpty
+                                  ? name
+                                  : _addressController.text.trim(),
+                              bookingStatus: BookingStatus.booked,
+                              confirmationRef: _confirmationController.text.trim().isEmpty
+                                  ? null
+                                  : _confirmationController.text.trim(),
+                              notes: _notesController.text.trim().isEmpty
+                                  ? null
+                                  : _notesController.text.trim(),
+                              stayId: stayId,
+                            );
+                            await repo.addActivity(checkOutAct);
+                            if (!initialLinkedActivityIds.contains(outActId)) {
+                              initialLinkedActivityIds.add(outActId);
+                            }
                           }
                         }
 
-                        // 2. Check-Out: update existing (always synced) or create new (when adding new stay)
-                        if (checkOutActs.isNotEmpty) {
-                          final existingCheckOut = checkOutActs.first;
-                          await repo.updateActivity(existingCheckOut.copyWith(
-                            stayId: stayId,
-                            date: _checkOutDate,
-                            startTime: _checkOutTime,
-                            title: 'Check-out: $name',
-                            location: _addressController.text.trim().isEmpty
-                                ? name
-                                : _addressController.text.trim(),
-                            bookingStatus: BookingStatus.booked,
-                            confirmationRef: _confirmationController.text.trim().isEmpty
-                                ? null
-                                : _confirmationController.text.trim(),
-                            notes: _notesController.text.trim().isEmpty
-                                ? null
-                                : _notesController.text.trim(),
-                          ));
-                          if (!initialLinkedActivityIds.contains(existingCheckOut.id)) {
-                            initialLinkedActivityIds.add(existingCheckOut.id);
-                          }
-                        } else if (!isEditing && _createCheckInOutActivities) {
-                          final outActId = 'act_${DateTime.now().millisecondsSinceEpoch + 1}_out';
-                          final checkOutAct = Activity(
-                            id: outActId,
-                            tripId: activeTrip.id,
-                            date: _checkOutDate,
-                            startTime: _checkOutTime,
-                            title: 'Check-out: $name',
-                            category: ActivityCategory.stay,
-                            location: _addressController.text.trim().isEmpty
-                                ? name
-                                : _addressController.text.trim(),
-                            bookingStatus: BookingStatus.booked,
-                            confirmationRef: _confirmationController.text.trim().isEmpty
-                                ? null
-                                : _confirmationController.text.trim(),
-                            notes: _notesController.text.trim().isEmpty
-                                ? null
-                                : _notesController.text.trim(),
-                            stayId: stayId,
+                        final finalLinkedIds = initialLinkedActivityIds.toSet().toList();
+
+                        final stay = Stay(
+                          id: stayId,
+                          tripId: activeTrip.id,
+                          type: _stayType,
+                          name: name,
+                          address: _addressController.text.trim().isEmpty
+                              ? null
+                              : _addressController.text.trim(),
+                          checkInDate: _checkInDate,
+                          checkInTime: _checkInTime,
+                          checkOutDate: _checkOutDate,
+                          checkOutTime: _checkOutTime,
+                          confirmationCode:
+                              _confirmationController.text.trim().isEmpty
+                                  ? null
+                                  : _confirmationController.text.trim(),
+                          notes: _notesController.text.trim().isEmpty
+                              ? null
+                              : _notesController.text.trim(),
+                          links: _links,
+                          attachments: _attachments,
+                          overnightFlight: overnightFlightObj,
+                          linkedActivityIds: finalLinkedIds,
+                        );
+
+                        if (isEditing) {
+                          await repo.updateStay(stay);
+                        } else {
+                          await repo.addStay(stay);
+                        }
+
+                        if (context.mounted) Navigator.pop(context);
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Failed to save stay: $e'),
+                              backgroundColor: Colors.red.shade700,
+                            ),
                           );
-                          await repo.addActivity(checkOutAct);
-                          if (!initialLinkedActivityIds.contains(outActId)) {
-                            initialLinkedActivityIds.add(outActId);
-                          }
+                        }
+                      } finally {
+                        if (mounted) {
+                          setState(() => _isSaving = false);
                         }
                       }
-
-                      final finalLinkedIds = initialLinkedActivityIds.toSet().toList();
-
-                      final stay = Stay(
-                        id: stayId,
-                        tripId: activeTrip.id,
-                        type: _stayType,
-                        name: name,
-                        address: _addressController.text.trim().isEmpty
-                            ? null
-                            : _addressController.text.trim(),
-                        checkInDate: _checkInDate,
-                        checkInTime: _checkInTime,
-                        checkOutDate: _checkOutDate,
-                        checkOutTime: _checkOutTime,
-                        confirmationCode:
-                            _confirmationController.text.trim().isEmpty
-                                ? null
-                                : _confirmationController.text.trim(),
-                        notes: _notesController.text.trim().isEmpty
-                            ? null
-                            : _notesController.text.trim(),
-                        overnightFlight: overnightFlightObj,
-                        linkedActivityIds: finalLinkedIds,
-                      );
-
-                      if (isEditing) {
-                        await repo.updateStay(stay);
-                      } else {
-                        await repo.addStay(stay);
-                      }
-
-                      if (context.mounted) Navigator.pop(context);
                     },
-                    child: Text(isEditing ? 'Save Changes' : 'Add Stay Bridge'),
+                    child: _isSaving
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : Text(isEditing ? 'Save Changes' : 'Add Stay Bridge'),
                   ),
                 ),
               ],
@@ -750,7 +817,8 @@ class _AddStaySheetState extends ConsumerState<AddStaySheet> {
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 
   void _showLinkActivityDialog(BuildContext context, WidgetRef ref, Stay stay, List<Activity> activities) {

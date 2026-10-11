@@ -376,12 +376,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Location is read-only displaying hotel name & address
-      expect(find.text(stay.name), findsWidgets);
-      if (stay.address != null) {
-        expect(find.text(stay.address!), findsWidgets);
-      }
-      expect(find.textContaining('Read-only: set automatically from linked stay'), findsOneWidget);
+      // Redundant Location field is removed when linked to stay as per Iteration #21
+      expect(find.text('Location / Address (Linked Stay)'), findsNothing);
+      expect(find.textContaining('Read-only: set automatically from linked stay'), findsNothing);
     });
 
     testWidgets('Hotel activity without a linked stay displays editable location field', (tester) async {
@@ -616,10 +613,12 @@ void main() {
       );
     });
 
-    testWidgets('Calendar View renders Day of Week, centered prominent city, floating stay rectangles, and bottom-aligned items', (tester) async {
+    testWidgets('Calendar View renders Day of Week, city inside subtle outline rectangle, stay icons on bottom right, and removed stay overlays', (tester) async {
       tester.view.physicalSize = const Size(1280, 900);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
+
+      Stay? tappedStay;
 
       await tester.pumpWidget(
         ProviderScope(
@@ -639,6 +638,7 @@ void main() {
                 activitiesByDay: {
                   trip.startDate: [act1],
                 },
+                onStayTap: (s) => tappedStay = s,
               ),
             ),
           ),
@@ -652,20 +652,36 @@ void main() {
       expect(find.text('TUE'), findsWidgets);
       expect(find.text('WED'), findsWidgets);
 
-      // 2. Centered prominent city label
-      expect(find.text('Tokyo'), findsWidgets);
+      // 2. City name rendered inside subtle rounded outline rectangle matching font color
+      final tokyoTextFinder = find.text('Tokyo').first;
+      expect(tokyoTextFinder, findsOneWidget);
+      final tokyoContainer = tester.widget<Container>(
+        find.ancestor(of: tokyoTextFinder, matching: find.byType(Container)).first,
+      );
+      final tokyoBox = tokyoContainer.decoration as BoxDecoration;
+      expect(tokyoBox.border, isNotNull);
+      expect(tokyoBox.borderRadius, BorderRadius.circular(6));
+      expect(tokyoBox.color, isNull); // outline only
+
       expect(find.text('Kyoto'), findsWidgets);
 
-      // 3. Floating Stay rectangles show hotel name (not address)
-      expect(find.text('Hotel Gracery Shinjuku'), findsWidgets);
-      expect(find.text('The Thousand Kyoto'), findsWidgets);
-      expect(find.text('Shinjuku, Tokyo'), findsNothing);
-      expect(find.text('Shimogyo Ward, Kyoto'), findsNothing);
+      // 3. Stay overlays are removed: hotel names no longer clutter day squares
+      expect(find.text('Hotel Gracery Shinjuku'), findsNothing);
+      expect(find.text('The Thousand Kyoto'), findsNothing);
 
-      // 4. Flight icon on Day 3 (NH001)
+      // 4. Small stay icon on bottom right corner represents the stay
+      final stayIcons = find.byIcon(Icons.hotel_rounded);
+      expect(stayIcons, findsWidgets);
+
+      // Tapping on stay icon shows Stay details
+      await tester.tap(stayIcons.first);
+      await tester.pumpAndSettle();
+      expect(tappedStay, isNotNull);
+
+      // 5. Flight icon on Day 3 (NH001)
       expect(find.text('NH001'), findsOneWidget);
 
-      // 5. Activity count aligned bottom (number only per req 9)
+      // 6. Activity count aligned bottom
       expect(find.text('1'), findsWidgets);
     });
   });

@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/date_formatters.dart';
+import '../../core/utils/map_launcher_helper.dart';
 import '../../models/models.dart';
 import '../../state/trip_providers.dart';
 import 'add_flight_sheet.dart';
 import 'add_stay_sheet.dart';
+import 'notes_and_attachments_section.dart';
+import 'modification_source_badge.dart';
 
 class AddActivitySheet extends ConsumerStatefulWidget {
   final Activity? activityToEdit;
@@ -38,6 +41,9 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
   final _toLocationController = TextEditingController();
   final _confirmationController = TextEditingController();
   final _notesController = TextEditingController();
+  List<String> _links = [];
+  List<String> _attachments = [];
+  bool _isSaving = false;
 
   late ActivityCategory _category;
   late BookingStatus _bookingStatus;
@@ -72,6 +78,8 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
       _locationController.text = edit.location ?? '';
       _confirmationController.text = edit.confirmationRef ?? '';
       _notesController.text = edit.notes ?? '';
+      _links = edit.links.toList();
+      _attachments = edit.attachments.toList();
       _category = edit.category;
       _bookingStatus = edit.bookingStatus;
       _selectedDate = edit.date;
@@ -251,6 +259,15 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
       currentSelectedFlight = availableFlights.where((f) => f.id == _selectedFlightId).firstOrNull;
     }
 
+    final isLinkedStay =
+        _category == ActivityCategory.stay && currentSelectedStay != null;
+    final hasLinkedStay = isLinkedStay || _selectedStayId != null;
+    final hasLinkedFlight = (_selectedFlightId != null) ||
+        (_isFlightTransfer && currentSelectedFlight != null);
+    final hideBookingSection = _category == ActivityCategory.stay ||
+        hasLinkedStay ||
+        hasLinkedFlight;
+
     // Normalized date check for trip day dropdown
     DateTime matchedDay = tripDays.first;
     for (final d in tripDays) {
@@ -260,17 +277,22 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
       }
     }
 
-    return Container(
-      padding: EdgeInsets.only(
-        top: 20,
-        left: 20,
-        right: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-      ),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final effectiveBottomPadding = bottomInset + 16;
+
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: EdgeInsets.only(
+          top: 20,
+          left: 20,
+          right: 20,
+          bottom: effectiveBottomPadding,
+        ),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -279,13 +301,27 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  isEditing ? 'Edit Activity' : 'Add Activity',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isEditing ? 'Edit Activity' : 'Add Activity',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    if (isEditing &&
+                        (widget.activityToEdit!.lastModifiedAt != null ||
+                            widget.activityToEdit!.lastModifiedSource != null)) ...[
+                      const SizedBox(height: 4),
+                      ModificationSourceBadge(
+                        lastModifiedAt: widget.activityToEdit!.lastModifiedAt,
+                        lastModifiedSource: widget.activityToEdit!.lastModifiedSource,
+                      ),
+                    ],
+                  ],
                 ),
                 IconButton(
                   icon: const Icon(Icons.close),
@@ -952,52 +988,73 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
                 availableStays,
                 _isFlightTransfer ? currentSelectedFlight : null,
               ),
-            ] else ...[
+              const SizedBox(height: 14),
+            ] else if (!isLinkedStay) ...[
               _buildStandardLocationSection(currentSelectedStay),
+              const SizedBox(height: 14),
+            ] else ...[
+              Builder(
+                builder: (context) {
+                  final hotelAddress =
+                      currentSelectedStay?.address ?? currentSelectedStay?.name ?? '';
+                  if (_locationController.text != hotelAddress) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) _locationController.text = hotelAddress;
+                    });
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
             ],
-            const SizedBox(height: 14),
 
-            // Booking Status
-            const Text(
-              'Booking Status',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 6),
-            SegmentedButton<BookingStatus>(
-              segments: const [
-                ButtonSegment(
-                    value: BookingStatus.planned, label: Text('Planned')),
-                ButtonSegment(
-                    value: BookingStatus.booked, label: Text('Booked')),
-                ButtonSegment(
-                    value: BookingStatus.ticketed, label: Text('Ticketed')),
-              ],
-              selected: {_bookingStatus},
-              onSelectionChanged: (set) {
-                setState(() => _bookingStatus = set.first);
-              },
-            ),
-            const SizedBox(height: 14),
-
-            // Confirmation Ref
-            TextField(
-              controller: _confirmationController,
-              decoration: const InputDecoration(
-                labelText: 'Confirmation / Booking Reference',
-                hintText: 'e.g. RES-99812',
-                prefixIcon: Icon(Icons.confirmation_number_outlined, size: 18),
+            // Booking Status and Confirmation Ref
+            // Hidden for Hotel & Stay Activities and Flights with Stays/Flights linked
+            if (!hideBookingSection) ...[
+              const Text(
+                'Booking Status',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
               ),
-            ),
-            const SizedBox(height: 14),
-
-            // Notes
-            TextField(
-              controller: _notesController,
-              maxLines: 2,
-              decoration: const InputDecoration(
-                labelText: 'Notes & Tips',
-                hintText: 'e.g. Bring comfortable shoes, camera allowed',
+              const SizedBox(height: 6),
+              SegmentedButton<BookingStatus>(
+                segments: const [
+                  ButtonSegment(
+                      value: BookingStatus.planned, label: Text('Planned')),
+                  ButtonSegment(
+                      value: BookingStatus.booked, label: Text('Booked')),
+                  ButtonSegment(
+                      value: BookingStatus.ticketed, label: Text('Ticketed')),
+                ],
+                selected: {_bookingStatus},
+                onSelectionChanged: (set) {
+                  setState(() => _bookingStatus = set.first);
+                },
               ),
+              const SizedBox(height: 14),
+
+              // Confirmation Ref
+              TextField(
+                controller: _confirmationController,
+                decoration: const InputDecoration(
+                  labelText: 'Confirmation / Booking Reference',
+                  hintText: 'e.g. RES-99812',
+                  prefixIcon:
+                      Icon(Icons.confirmation_number_outlined, size: 18),
+                ),
+              ),
+              const SizedBox(height: 14),
+            ],
+
+            // Notes, Links & Attachments
+            NotesAndAttachmentsSection(
+              notesController: _notesController,
+              links: _links,
+              attachments: _attachments,
+              notesLabel: 'Notes & Tips',
+              notesHint: 'e.g. Bring comfortable shoes, camera allowed',
+              tripId: activeTrip.id,
+              onLinksChanged: (updated) => setState(() => _links = updated),
+              onAttachmentsChanged: (updated) =>
+                  setState(() => _attachments = updated),
             ),
             const SizedBox(height: 20),
 
@@ -1057,9 +1114,14 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
                 ],
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () async {
+                    onPressed: _isSaving ? null : () async {
                       final title = _titleController.text.trim();
-                      if (title.isEmpty) return;
+                      if (title.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Please enter an activity title.')),
+                        );
+                        return;
+                      }
 
                       final fromLoc = _fromLocationController.text.trim();
                       final toLoc = _toLocationController.text.trim();
@@ -1107,64 +1169,88 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
                         notes: _notesController.text.trim().isEmpty
                             ? null
                             : _notesController.text.trim(),
+                        links: _links,
+                        attachments: _attachments,
                         stayId: _category == ActivityCategory.stay ? _selectedStayId : null,
                         flightId: _category == ActivityCategory.transport && _isFlightTransfer ? _selectedFlightId : null,
                         mealType: _mealType,
                       );
 
-                      if (isEditing) {
-                        await repo.updateActivity(activity);
-                      } else {
-                        await repo.addActivity(activity);
-                      }
+                      setState(() => _isSaving = true);
+                      try {
+                        if (isEditing) {
+                          await repo.updateActivity(activity);
+                        } else {
+                          await repo.addActivity(activity);
+                        }
 
-                      // Manage reciprocal link on Flight side
-                      final targetFlightId = _category == ActivityCategory.transport && _isFlightTransfer ? _selectedFlightId : null;
-                      final prevFlightId = widget.activityToEdit?.flightId;
+                        // Manage reciprocal link on Flight side
+                        final targetFlightId = _category == ActivityCategory.transport && _isFlightTransfer ? _selectedFlightId : null;
+                        final prevFlightId = widget.activityToEdit?.flightId;
 
-                      if (targetFlightId != null) {
-                        final flt = availableFlights.where((f) => f.id == targetFlightId).firstOrNull;
-                        if (flt != null && !flt.linkedActivityIds.contains(activity.id)) {
-                          await repo.updateFlight(flt.copyWith(
-                            linkedActivityIds: [...flt.linkedActivityIds, activity.id],
-                          ));
+                        if (targetFlightId != null) {
+                          final flt = availableFlights.where((f) => f.id == targetFlightId).firstOrNull;
+                          if (flt != null && !flt.linkedActivityIds.contains(activity.id)) {
+                            await repo.updateFlight(flt.copyWith(
+                              linkedActivityIds: [...flt.linkedActivityIds, activity.id],
+                            ));
+                          }
+                        }
+
+                        if (prevFlightId != null && prevFlightId != targetFlightId) {
+                          final oldFlt = availableFlights.where((f) => f.id == prevFlightId).firstOrNull;
+                          if (oldFlt != null && oldFlt.linkedActivityIds.contains(activity.id)) {
+                            await repo.updateFlight(oldFlt.copyWith(
+                              linkedActivityIds: oldFlt.linkedActivityIds.where((id) => id != activity.id).toList(),
+                            ));
+                          }
+                        }
+
+                        // Manage reciprocal link on Stay side
+                        final targetStayId = _category == ActivityCategory.stay ? _selectedStayId : null;
+                        final prevStayId = widget.activityToEdit?.stayId;
+
+                        if (targetStayId != null) {
+                          final sty = availableStays.where((s) => s.id == targetStayId).firstOrNull;
+                          if (sty != null && !sty.linkedActivityIds.contains(activity.id)) {
+                            await repo.updateStay(sty.copyWith(
+                              linkedActivityIds: [...sty.linkedActivityIds, activity.id],
+                            ));
+                          }
+                        }
+
+                        if (prevStayId != null && prevStayId != targetStayId) {
+                          final oldSty = availableStays.where((s) => s.id == prevStayId).firstOrNull;
+                          if (oldSty != null && oldSty.linkedActivityIds.contains(activity.id)) {
+                            await repo.updateStay(oldSty.copyWith(
+                              linkedActivityIds: oldSty.linkedActivityIds.where((id) => id != activity.id).toList(),
+                            ));
+                          }
+                        }
+
+                        if (context.mounted) Navigator.pop(context);
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Failed to save activity: $e'),
+                              backgroundColor: Colors.red.shade700,
+                            ),
+                          );
+                        }
+                      } finally {
+                        if (mounted) {
+                          setState(() => _isSaving = false);
                         }
                       }
-
-                      if (prevFlightId != null && prevFlightId != targetFlightId) {
-                        final oldFlt = availableFlights.where((f) => f.id == prevFlightId).firstOrNull;
-                        if (oldFlt != null && oldFlt.linkedActivityIds.contains(activity.id)) {
-                          await repo.updateFlight(oldFlt.copyWith(
-                            linkedActivityIds: oldFlt.linkedActivityIds.where((id) => id != activity.id).toList(),
-                          ));
-                        }
-                      }
-
-                      // Manage reciprocal link on Stay side
-                      final targetStayId = _category == ActivityCategory.stay ? _selectedStayId : null;
-                      final prevStayId = widget.activityToEdit?.stayId;
-
-                      if (targetStayId != null) {
-                        final sty = availableStays.where((s) => s.id == targetStayId).firstOrNull;
-                        if (sty != null && !sty.linkedActivityIds.contains(activity.id)) {
-                          await repo.updateStay(sty.copyWith(
-                            linkedActivityIds: [...sty.linkedActivityIds, activity.id],
-                          ));
-                        }
-                      }
-
-                      if (prevStayId != null && prevStayId != targetStayId) {
-                        final oldSty = availableStays.where((s) => s.id == prevStayId).firstOrNull;
-                        if (oldSty != null && oldSty.linkedActivityIds.contains(activity.id)) {
-                          await repo.updateStay(oldSty.copyWith(
-                            linkedActivityIds: oldSty.linkedActivityIds.where((id) => id != activity.id).toList(),
-                          ));
-                        }
-                      }
-
-                      if (context.mounted) Navigator.pop(context);
                     },
-                    child: Text(isEditing ? 'Save Changes' : 'Add to Day'),
+                    child: _isSaving
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : Text(isEditing ? 'Save Changes' : 'Add to Day'),
                   ),
                 ),
               ],
@@ -1172,19 +1258,101 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
           ],
         ),
       ),
+      ),
     );
+  }
+
+  String _getResolvedFromLocation(
+    List<Stay> availableStays,
+    Flight? currentSelectedFlight,
+  ) {
+    if (_fromStayId != null) {
+      final stay = availableStays.where((s) => s.id == _fromStayId).firstOrNull;
+      if (stay != null) {
+        return (stay.address != null && stay.address!.isNotEmpty)
+            ? stay.address!
+            : stay.name;
+      }
+    }
+    if (_transportDirection == 'from_airport' && currentSelectedFlight != null) {
+      return currentSelectedFlight.arrivalAirport;
+    }
+    return _fromLocationController.text.trim();
+  }
+
+  String _getResolvedToLocation(
+    List<Stay> availableStays,
+    Flight? currentSelectedFlight,
+  ) {
+    if (_toStayId != null) {
+      final stay = availableStays.where((s) => s.id == _toStayId).firstOrNull;
+      if (stay != null) {
+        return (stay.address != null && stay.address!.isNotEmpty)
+            ? stay.address!
+            : stay.name;
+      }
+    }
+    if (_transportDirection == 'to_airport' && currentSelectedFlight != null) {
+      return currentSelectedFlight.departureAirport;
+    }
+    return _toLocationController.text.trim();
   }
 
   Widget _buildTransportLocationSection(
     List<Stay> availableStays,
     Flight? currentSelectedFlight,
   ) {
+    final fromAddress =
+        _getResolvedFromLocation(availableStays, currentSelectedFlight);
+    final toAddress =
+        _getResolvedToLocation(availableStays, currentSelectedFlight);
+    final hasBothAddresses =
+        fromAddress.isNotEmpty && toAddress.isNotEmpty;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Transport Route Locations',
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Transport Route Locations',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+            OutlinedButton.icon(
+              key: const ValueKey('transport_get_directions_button'),
+              icon: const Icon(Icons.directions_rounded,
+                  size: 14, color: AppColors.primary),
+              label: const Text('Directions in Maps',
+                  style: TextStyle(fontSize: 11)),
+              style: OutlinedButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                side: BorderSide(
+                  color: hasBothAddresses
+                      ? AppColors.primary
+                      : Colors.grey.shade300,
+                ),
+              ),
+              onPressed: () {
+                if (!hasBothAddresses) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                          'Please specify both From and To locations to view directions.'),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                  return;
+                }
+                MapLauncherHelper.openDirections(
+                  origin: fromAddress,
+                  destination: toAddress,
+                );
+              },
+            ),
+          ],
         ),
         const SizedBox(height: 6),
         _buildFromLocationField(availableStays, currentSelectedFlight),
@@ -1210,7 +1378,14 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
         ),
         child: Row(
           children: [
-            const Icon(Icons.hotel_rounded, size: 18, color: AppColors.stay),
+            IconButton(
+              icon: const Icon(Icons.hotel_rounded, size: 18, color: AppColors.stay),
+              tooltip: 'Open in Map',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: () => MapLauncherHelper.openAddress(
+                  stay?.address ?? stay?.name ?? ''),
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: Column(
@@ -1277,7 +1452,12 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
       decoration: InputDecoration(
         labelText: 'From (Location / Address)',
         hintText: 'e.g. Hotel, Home, or City Center',
-        prefixIcon: const Icon(Icons.trip_origin_rounded, size: 18),
+        prefixIcon: IconButton(
+          icon: const Icon(Icons.location_on_outlined, size: 18),
+          tooltip: 'Open in Map',
+          onPressed: () =>
+              MapLauncherHelper.openAddress(_fromLocationController.text),
+        ),
         suffixIcon: availableStays.isNotEmpty
             ? PopupMenuButton<Stay>(
                 tooltip: 'Select Stay as From Location',
@@ -1329,7 +1509,14 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
         ),
         child: Row(
           children: [
-            const Icon(Icons.hotel_rounded, size: 18, color: AppColors.stay),
+            IconButton(
+              icon: const Icon(Icons.hotel_rounded, size: 18, color: AppColors.stay),
+              tooltip: 'Open in Map',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: () => MapLauncherHelper.openAddress(
+                  stay?.address ?? stay?.name ?? ''),
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: Column(
@@ -1396,7 +1583,12 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
       decoration: InputDecoration(
         labelText: 'To (Location / Address)',
         hintText: 'e.g. Hotel, Airport, or Station',
-        prefixIcon: const Icon(Icons.place_outlined, size: 18),
+        prefixIcon: IconButton(
+          icon: const Icon(Icons.location_on_outlined, size: 18),
+          tooltip: 'Open in Map',
+          onPressed: () =>
+              MapLauncherHelper.openAddress(_toLocationController.text),
+        ),
         suffixIcon: availableStays.isNotEmpty
             ? PopupMenuButton<Stay>(
                 tooltip: 'Select Stay as To Location',
@@ -1447,10 +1639,15 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
       decoration: InputDecoration(
         labelText: isLinkedStay ? 'Location / Address (Linked Stay)' : 'Location / Address',
         hintText: 'e.g. Asakusa, Taito City',
-        prefixIcon: Icon(
-          isLinkedStay ? Icons.hotel_rounded : Icons.location_on_outlined,
-          size: 18,
-          color: isLinkedStay ? AppColors.stay : null,
+        prefixIcon: IconButton(
+          icon: Icon(
+            isLinkedStay ? Icons.hotel_rounded : Icons.location_on_outlined,
+            size: 18,
+            color: isLinkedStay ? AppColors.stay : null,
+          ),
+          tooltip: 'Open in Map',
+          onPressed: () =>
+              MapLauncherHelper.openAddress(_locationController.text),
         ),
         helperText: isLinkedStay
             ? 'Read-only: set automatically from linked stay "${currentSelectedStay.name}"'

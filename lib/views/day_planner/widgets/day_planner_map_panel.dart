@@ -243,6 +243,23 @@ class _DayPlannerMapPanelState extends State<DayPlannerMapPanel> {
             markerLetter: 'B',
           ));
         }
+
+        if ((from == null || from.isEmpty) && (to == null || to.isEmpty)) {
+          final loc = act.location?.trim();
+          if (loc != null && loc.isNotEmpty) {
+            final coords = TripMapHelper.resolveCoordinates(loc,
+                contextCountry: widget.defaultCountry);
+            pins.add(DayMapPin(
+              id: act.id,
+              title: act.title,
+              time: act.startTime,
+              locationName: loc,
+              coordinates: coords,
+              activity: act,
+              category: act.category,
+            ));
+          }
+        }
       } else {
         final loc = act.location?.trim();
         if (loc == null || loc.isEmpty) {
@@ -279,7 +296,50 @@ class _DayPlannerMapPanelState extends State<DayPlannerMapPanel> {
       }
     }
 
+    // Iteration 16: If there are no activities for this day, position pin for today's stay
+    if (pins.isEmpty) {
+      final nightStay = _resolveNightStayForDate(widget.date);
+      if (nightStay != null && nightStay.name.isNotEmpty) {
+        final loc = nightStay.address != null && nightStay.address!.isNotEmpty
+            ? nightStay.address!
+            : nightStay.name;
+        final coords = TripMapHelper.resolveCoordinates(loc,
+            contextCountry: widget.defaultCountry);
+        pins.add(DayMapPin(
+          id: 'stay_${nightStay.id}',
+          title: nightStay.name,
+          time: nightStay.checkInTime ?? 'Stay',
+          locationName: loc,
+          coordinates: coords,
+          activity: Activity(
+            id: 'stay_${nightStay.id}',
+            tripId: widget.trip.id,
+            date: widget.date,
+            startTime: nightStay.checkInTime ?? '15:00',
+            title: nightStay.name,
+            category: ActivityCategory.stay,
+            location: loc,
+          ),
+          category: ActivityCategory.stay,
+        ));
+      }
+    }
+
     return pins;
+  }
+
+  Stay? _resolveNightStayForDate(DateTime date) {
+    for (final s in widget.stays) {
+      final start =
+          DateTime(s.checkInDate.year, s.checkInDate.month, s.checkInDate.day);
+      final end = DateTime(
+          s.checkOutDate.year, s.checkOutDate.month, s.checkOutDate.day);
+      final d = DateTime(date.year, date.month, date.day);
+      if (!d.isBefore(start) && d.isBefore(end)) {
+        return s;
+      }
+    }
+    return null;
   }
 
   static double _latToMercatorY(double latDeg) {
@@ -306,14 +366,25 @@ class _DayPlannerMapPanelState extends State<DayPlannerMapPanel> {
     ];
 
     if (allPoints.isEmpty) {
-      final defaultC = TripMapHelper.resolveCoordinates(
+      final nightStay = _resolveNightStayForDate(widget.date);
+      GeoPoint? defaultC;
+      if (nightStay != null && nightStay.name.isNotEmpty) {
+        final loc = nightStay.address != null && nightStay.address!.isNotEmpty
+            ? nightStay.address!
+            : nightStay.name;
+        defaultC = TripMapHelper.resolveCoordinates(
+          loc,
+          contextCountry: widget.defaultCountry,
+        );
+      }
+      defaultC ??= TripMapHelper.resolveCoordinates(
         widget.trip.destination,
         contextCountry: widget.defaultCountry,
       );
-      minLat = defaultC.lat - 0.03;
-      maxLat = defaultC.lat + 0.03;
-      minLng = defaultC.lng - 0.03;
-      maxLng = defaultC.lng + 0.03;
+      minLat = defaultC.lat - 0.035;
+      maxLat = defaultC.lat + 0.035;
+      minLng = defaultC.lng - 0.035;
+      maxLng = defaultC.lng + 0.035;
     } else {
       minLat = allPoints.first.lat;
       maxLat = allPoints.first.lat;
@@ -340,9 +411,9 @@ class _DayPlannerMapPanelState extends State<DayPlannerMapPanel> {
     final centerX = (xMinNorm + xMaxNorm) / 2.0;
     final centerY = (yMinNorm + yMaxNorm) / 2.0;
 
-    // Enforce 1:1 square aspect ratio with 35% margin for comfortable padding
+    // Enforce 1:1 square aspect ratio with comfortable padding
     final squareSpan =
-        math.max(0.003, math.max(spanX, spanY) * 1.35).clamp(0.001, 1.0);
+        math.max(0.001, math.max(spanX, spanY) * 1.35).clamp(0.0005, 1.0);
 
     final squareXMin = centerX - squareSpan / 2.0;
     final squareXMax = centerX + squareSpan / 2.0;
@@ -400,9 +471,48 @@ class _DayPlannerMapPanelState extends State<DayPlannerMapPanel> {
 
     if (act.category == ActivityCategory.transport && pins.length >= 2) {
       // Directions: fit both From and To points, plus any active road route curve coordinates
+      final allPins = _extractDayPins();
       final routeCoords = _activeRouteDirections?.coordinates;
-      final bounds = _getBounds(pins, routeCoords);
-      _fitToBounds(bounds);
+      final bounds = _getBounds(allPins, routeCoords);
+
+      final renderBox = context.findRenderObject() as RenderBox?;
+      final viewport = renderBox?.size ?? const Size(600, 500);
+
+      // Project all route points to canvas coordinates
+      final routePoints = <Offset>[
+        _projectToCanvas(pins.first.coordinates, bounds),
+        _projectToCanvas(pins.last.coordinates, bounds),
+        if (routeCoords != null)
+          for (final c in routeCoords) _projectToCanvas(c, bounds),
+      ];
+
+      double minX = routePoints.first.dx;
+      double maxX = routePoints.first.dx;
+      double minY = routePoints.first.dy;
+      double maxY = routePoints.first.dy;
+      for (final p in routePoints) {
+        if (p.dx < minX) minX = p.dx;
+        if (p.dx > maxX) maxX = p.dx;
+        if (p.dy < minY) minY = p.dy;
+        if (p.dy > maxY) maxY = p.dy;
+      }
+
+      final centerRoute = Offset((minX + maxX) / 2, (minY + maxY) / 2);
+      final spanRouteX = math.max(maxX - minX, 100.0);
+      final spanRouteY = math.max(maxY - minY, 100.0);
+
+      final targetScale = math.min(
+        (viewport.width * 0.75) / spanRouteX,
+        (viewport.height * 0.75) / spanRouteY,
+      ).clamp(0.2, 2.5);
+
+      final dx = (viewport.width / 2) - (centerRoute.dx * targetScale);
+      final dy = (viewport.height / 2) - (centerRoute.dy * targetScale);
+
+      final matrix = Matrix4.diagonal3Values(targetScale, targetScale, 1.0)
+        ..setTranslationRaw(dx, dy, 0.0);
+
+      _transformController.value = matrix;
     } else {
       // Single location: center and zoom in directly
       final targetPin = pins.first;
@@ -1581,7 +1691,7 @@ class _DayGoogleMapTileLayer extends StatelessWidget {
           tx++) {
         final wrappedX = (tx % worldTiles + worldTiles) % worldTiles;
         final url =
-            'https://mt1.google.com/vt/lyrs=$lyrs&x=$wrappedX&y=$ty&z=$zoom';
+            'https://mt1.google.com/vt/lyrs=$lyrs&x=$wrappedX&y=$ty&z=$zoom&scale=2';
 
         if (_failedUrls.contains(url)) continue;
 
@@ -1602,6 +1712,7 @@ class _DayGoogleMapTileLayer extends StatelessWidget {
               width: size,
               height: size,
               fit: BoxFit.fill,
+              filterQuality: FilterQuality.medium,
               errorBuilder: (context, error, stackTrace) {
                 _failedUrls.add(url);
                 return const SizedBox.shrink();

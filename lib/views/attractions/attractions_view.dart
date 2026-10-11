@@ -6,6 +6,7 @@ import '../../models/models.dart';
 import '../../state/trip_providers.dart';
 import '../common/add_flight_sheet.dart';
 import '../common/add_stay_sheet.dart';
+import '../common/modification_source_badge.dart';
 
 enum ActivityGrouping {
   day,
@@ -97,22 +98,30 @@ class _AttractionsViewState extends ConsumerState<AttractionsView> {
     final activeTrip = ref.watch(activeTripProvider);
     final canEdit = ref.watch(canEditActiveTripProvider);
     final repo = ref.watch(tripRepositoryProvider);
+    final tripFlights = ref.watch(activeTripFlightsProvider).value ?? [];
 
     return Scaffold(
       floatingActionButton: canEdit
-          ? FloatingActionButton.extended(
-              heroTag: 'add_activity_fab',
-              onPressed: widget.onAddActivity,
-              icon: const Icon(Icons.add, color: Colors.white),
-              label: const Text(
-                'Add Activity',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              backgroundColor: AppColors.attraction,
-            )
+          ? (MediaQuery.sizeOf(context).width < 600
+              ? FloatingActionButton(
+                  heroTag: 'add_activity_fab',
+                  onPressed: widget.onAddActivity,
+                  backgroundColor: AppColors.attraction,
+                  child: const Icon(Icons.add, color: Colors.white),
+                )
+              : FloatingActionButton.extended(
+                  heroTag: 'add_activity_fab',
+                  onPressed: widget.onAddActivity,
+                  icon: const Icon(Icons.add, color: Colors.white),
+                  label: const Text(
+                    'Add Activity',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  backgroundColor: AppColors.attraction,
+                ))
           : null,
       body: Column(
         children: [
@@ -143,66 +152,64 @@ class _AttractionsViewState extends ConsumerState<AttractionsView> {
                 const SizedBox(height: 10),
 
                 // Grouping & Date Range Controls
-                Row(
-                  children: [
-                    // Grouping Switcher
-                    SegmentedButton<ActivityGrouping>(
-                      showSelectedIcon: false,
-                      style: SegmentedButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      // Grouping Switcher
+                      SegmentedButton<ActivityGrouping>(
+                        showSelectedIcon: false,
+                        style: SegmentedButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                        ),
+                        segments: const [
+                          ButtonSegment(
+                            value: ActivityGrouping.day,
+                            icon: Icon(Icons.calendar_today_outlined, size: 14),
+                            label: Text('By Day'),
+                          ),
+                          ButtonSegment(
+                            value: ActivityGrouping.category,
+                            icon: Icon(Icons.category_outlined, size: 14),
+                            label: Text('By Category'),
+                          ),
+                        ],
+                        selected: {_grouping},
+                        onSelectionChanged: (set) => setState(() => _grouping = set.first),
                       ),
-                      segments: const [
-                        ButtonSegment(
-                          value: ActivityGrouping.day,
-                          icon: Icon(Icons.calendar_today_outlined, size: 14),
-                          label: Text('By Day'),
-                        ),
-                        ButtonSegment(
-                          value: ActivityGrouping.category,
-                          icon: Icon(Icons.category_outlined, size: 14),
-                          label: Text('By Category'),
-                        ),
-                      ],
-                      selected: {_grouping},
-                      onSelectionChanged: (set) => setState(() => _grouping = set.first),
-                    ),
-                    const SizedBox(width: 8),
+                      const SizedBox(width: 8),
 
-                    // Date Range Filter Button / Chip
-                    Expanded(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: _selectedDateRange == null
-                            ? OutlinedButton.icon(
-                                onPressed: () => _pickDateRange(context, activeTrip),
-                                icon: const Icon(Icons.date_range_rounded, size: 15),
-                                label: const Text('All Dates', style: TextStyle(fontSize: 12)),
-                                style: OutlinedButton.styleFrom(
-                                  visualDensity: VisualDensity.compact,
-                                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                                ),
-                              )
-                            : InputChip(
-                                avatar: const Icon(Icons.date_range_rounded, size: 14, color: AppColors.primary),
-                                label: Text(
-                                  '${DateFormatters.shortDate.format(_selectedDateRange!.start)} – ${DateFormatters.shortDate.format(_selectedDateRange!.end)}',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.primary,
-                                  ),
-                                ),
-                                deleteIcon: const Icon(Icons.close, size: 14),
-                                onDeleted: () => setState(() => _selectedDateRange = null),
-                                onPressed: () => _pickDateRange(context, activeTrip),
+                      // Date Range Filter Button / Chip
+                      _selectedDateRange == null
+                          ? OutlinedButton.icon(
+                              onPressed: () => _pickDateRange(context, activeTrip),
+                              icon: const Icon(Icons.date_range_rounded, size: 15),
+                              label: const Text('All Dates', style: TextStyle(fontSize: 12)),
+                              style: OutlinedButton.styleFrom(
                                 visualDensity: VisualDensity.compact,
-                                backgroundColor: AppColors.primaryContainer.withValues(alpha: 0.5),
+                                padding: const EdgeInsets.symmetric(horizontal: 10),
                               ),
-                      ),
-                    ),
-                  ],
+                            )
+                          : InputChip(
+                              avatar: const Icon(Icons.date_range_rounded, size: 14, color: AppColors.primary),
+                              label: Text(
+                                '${DateFormatters.shortDate.format(_selectedDateRange!.start)} – ${DateFormatters.shortDate.format(_selectedDateRange!.end)}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                              deleteIcon: const Icon(Icons.close, size: 14),
+                              onDeleted: () => setState(() => _selectedDateRange = null),
+                              onPressed: () => _pickDateRange(context, activeTrip),
+                              visualDensity: VisualDensity.compact,
+                              backgroundColor: AppColors.primaryContainer.withValues(alpha: 0.5),
+                            ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 10),
 
@@ -225,16 +232,6 @@ class _AttractionsViewState extends ConsumerState<AttractionsView> {
                             _selectedCategory == ActivityCategory.attraction
                                 ? null
                                 : ActivityCategory.attraction),
-                      ),
-                      const SizedBox(width: 8),
-                      FilterChip(
-                        avatar: const Icon(Icons.hotel_rounded, size: 14),
-                        label: const Text('Stays'),
-                        selected: _selectedCategory == ActivityCategory.stay,
-                        onSelected: (_) => setState(() => _selectedCategory =
-                            _selectedCategory == ActivityCategory.stay
-                                ? null
-                                : ActivityCategory.stay),
                       ),
                       const SizedBox(width: 8),
                       FilterChip(
@@ -289,6 +286,11 @@ class _AttractionsViewState extends ConsumerState<AttractionsView> {
               data: (allActivities) {
                 // Apply Filters
                 final filtered = allActivities.where((a) {
+                  // Only include real activities (exclude stays, check-in/out, and flight entries)
+                  if (!_isRealActivity(a, tripFlights)) {
+                    return false;
+                  }
+
                   // Category Filter
                   if (_selectedCategory != null && a.category != _selectedCategory) {
                     return false;
@@ -420,7 +422,10 @@ class _AttractionsViewState extends ConsumerState<AttractionsView> {
                 }
 
                 final sortedCats = ActivityCategory.values
-                    .where((cat) => catMap.containsKey(cat) && catMap[cat]!.isNotEmpty)
+                    .where((cat) =>
+                        cat != ActivityCategory.stay &&
+                        catMap.containsKey(cat) &&
+                        catMap[cat]!.isNotEmpty)
                     .toList();
 
                 return ListView.builder(
@@ -585,43 +590,38 @@ class _AttractionsViewState extends ConsumerState<AttractionsView> {
                 builder: (context) {
                   final flights = ref.watch(activeTripFlightsProvider).value ?? [];
                   final flt = flights.where((f) => f.id == act.flightId).firstOrNull;
-                  final label = flt != null ? '${flt.flightNumber} (${flt.airline})' : 'Flight';
-                  return InkWell(
-                    onTap: flt != null
-                        ? () {
-                            showModalBottomSheet(
-                              context: context,
-                              isScrollControlled: true,
-                              backgroundColor: Colors.transparent,
-                              builder: (ctx) => AddFlightSheet(flightToEdit: flt),
-                            );
-                          }
-                        : null,
-                    borderRadius: BorderRadius.circular(4),
-                    child: Container(
-                      margin: const EdgeInsets.only(right: 6),
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE0F2FE),
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.3)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.flight_takeoff_rounded, size: 12, color: Color(0xFF0369A1)),
-                          const SizedBox(width: 3),
-                          Text(
-                            label,
-                            style: const TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF0369A1),
-                            ),
+                  final tooltipMsg = flt != null
+                      ? 'Flight: ${flt.flightNumber} (${flt.airline}) • Tap to view'
+                      : 'Flight details';
+                  return Tooltip(
+                    message: tooltipMsg,
+                    child: InkWell(
+                      onTap: flt != null
+                          ? () {
+                              showModalBottomSheet(
+                                context: context,
+                                isScrollControlled: true,
+                                backgroundColor: Colors.transparent,
+                                builder: (ctx) => AddFlightSheet(flightToEdit: flt),
+                              );
+                            }
+                          : null,
+                      borderRadius: BorderRadius.circular(4),
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2.5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE0F2FE),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                            color: const Color(0xFF0284C7).withValues(alpha: 0.3),
                           ),
-                          const SizedBox(width: 2),
-                          const Icon(Icons.arrow_forward_ios_rounded, size: 8, color: Color(0xFF0369A1)),
-                        ],
+                        ),
+                        child: const Icon(
+                          Icons.flight_takeoff_rounded,
+                          size: 13,
+                          color: Color(0xFF0369A1),
+                        ),
                       ),
                     ),
                   );
@@ -645,7 +645,8 @@ class _AttractionsViewState extends ConsumerState<AttractionsView> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 4),
-            Row(
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Text(
                   '${DateFormatters.shortDate.format(act.date)}  •  ${DateFormatters.formatTimeString(act.startTime)}',
@@ -655,22 +656,62 @@ class _AttractionsViewState extends ConsumerState<AttractionsView> {
                     color: AppColors.primary,
                   ),
                 ),
-                if (act.location != null) ...[
+                if (act.location != null && act.location!.isNotEmpty) ...[
                   const Text('  •  ', style: TextStyle(color: Colors.grey)),
-                  Expanded(
-                    child: Text(
-                      act.location!,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                  Text(
+                    act.location!,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ],
             ),
+            if (act.flightId != null) ...[
+              Builder(
+                builder: (context) {
+                  final flights = ref.watch(activeTripFlightsProvider).value ?? [];
+                  final flt = flights.where((f) => f.id == act.flightId).firstOrNull;
+                  if (flt == null) return const SizedBox.shrink();
+                  final label = '${flt.flightNumber} (${flt.airline})';
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 3),
+                    child: InkWell(
+                      onTap: () {
+                        showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          backgroundColor: Colors.transparent,
+                          builder: (ctx) => AddFlightSheet(flightToEdit: flt),
+                        );
+                      },
+                      borderRadius: BorderRadius.circular(3),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.flight_takeoff_rounded, size: 11, color: Color(0xFF0284C7)),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              label,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF0284C7),
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
             if (act.confirmationRef != null && act.confirmationRef!.isNotEmpty) ...[
               const SizedBox(height: 4),
               Text(
@@ -680,6 +721,14 @@ class _AttractionsViewState extends ConsumerState<AttractionsView> {
                   fontFamily: 'monospace',
                   color: AppColors.textMuted,
                 ),
+              ),
+            ],
+            if (act.lastModifiedAt != null || act.lastModifiedSource != null) ...[
+              const SizedBox(height: 5),
+              ModificationSourceBadge(
+                lastModifiedAt: act.lastModifiedAt,
+                lastModifiedSource: act.lastModifiedSource,
+                isCompact: true,
               ),
             ],
           ],
@@ -744,5 +793,98 @@ class _AttractionsViewState extends ConsumerState<AttractionsView> {
         onTap: () => widget.onActivityTap?.call(act),
       ),
     );
+  }
+
+  /// Determines whether an activity is a real activity (excluding stays, check-in/out, and flights).
+  bool _isRealActivity(Activity a, List<Flight> tripFlights) {
+    // 1. Exclude stay category
+    if (a.category == ActivityCategory.stay) {
+      return false;
+    }
+
+    final titleLower = a.title.trim().toLowerCase();
+
+    // 2. Exclude check-in / check-out entries
+    if (titleLower.startsWith('check-in') ||
+        titleLower.startsWith('check-out') ||
+        titleLower.startsWith('check in') ||
+        titleLower.startsWith('check out') ||
+        titleLower.contains('check-in at hotel') ||
+        titleLower.contains('check-out of hotel') ||
+        titleLower.contains('check-in:') ||
+        titleLower.contains('check-out:')) {
+      return false;
+    }
+
+    // 3. Exclude flight entries (the flights themselves, arrival/departure flight entries)
+    if (titleLower.startsWith('flight ') ||
+        titleLower.startsWith('flight:') ||
+        titleLower.startsWith('overnight flight') ||
+        titleLower.contains('departure flight') ||
+        titleLower.contains('arrival flight') ||
+        titleLower.contains('connecting flight') ||
+        titleLower.contains('return flight')) {
+      if (!titleLower.startsWith('flight of the') && !titleLower.contains('simulator')) {
+        return false;
+      }
+    }
+
+    if ((titleLower.startsWith('arrive at') || titleLower.startsWith('arrival at')) &&
+        titleLower.contains('airport')) {
+      return false;
+    }
+
+    // Direct match against trip's flights
+    for (final f in tripFlights) {
+      final fNum = f.flightNumber.trim().toLowerCase();
+      if (fNum.isNotEmpty && titleLower.contains(fNum)) {
+        final isTransfer = a.transportDirection != null ||
+            titleLower.contains('transfer') ||
+            titleLower.contains('transport') ||
+            titleLower.contains('taxi') ||
+            titleLower.contains('train') ||
+            titleLower.contains('bus') ||
+            titleLower.contains('shuttle') ||
+            titleLower.contains('uber');
+        if (!isTransfer) {
+          return false;
+        }
+      }
+    }
+
+    const airlineKeywords = [
+      'vietnam airlines',
+      'delta air lines',
+      'delta airlines',
+      'united airlines',
+      'american airlines',
+      'air france',
+      'lufthansa',
+      'british airways',
+      'emirates',
+      'qatar airways',
+      'singapore airlines',
+      'japan airlines',
+      'korean air',
+      'cathay pacific',
+      'thai airways',
+    ];
+    for (final al in airlineKeywords) {
+      if (titleLower.contains(al)) {
+        final isTransfer = a.transportDirection != null ||
+            titleLower.contains('transfer') ||
+            titleLower.contains('transport') ||
+            titleLower.contains('taxi') ||
+            titleLower.contains('train') ||
+            titleLower.contains('bus') ||
+            titleLower.contains('shuttle') ||
+            titleLower.contains('uber');
+        if (!isTransfer) {
+          return false;
+        }
+      }
+    }
+
+    return true;
   }
 }

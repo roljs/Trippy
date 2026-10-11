@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "trippy": {
+      "command": "dart",
+      "args": ["run", "bin/trippy_mcp_server.dart"],
+      "env": {
+        "TRIPPY_PROJECT_ID": "trippy-prod-4524f"
+      }
+    }
+  }
+}
