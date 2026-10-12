@@ -48,6 +48,14 @@ void main() {
       expect(AttachmentCacheService.isPdf('https://example.com/tickets.png'), isFalse);
     });
 
+    test('resolveMimeType accurately maps extensions to MIME types', () {
+      expect(AttachmentCacheService.resolveMimeType('https://example.com/file.pdf'), equals('application/pdf'));
+      expect(AttachmentCacheService.resolveMimeType('photo.png'), equals('image/png'));
+      expect(AttachmentCacheService.resolveMimeType('picture.jpg'), equals('image/jpeg'));
+      expect(AttachmentCacheService.resolveMimeType('doc.docx'), equals('application/vnd.openxmlformats-officedocument.wordprocessingml.document'));
+      expect(AttachmentCacheService.resolveMimeType('unknown.xyz'), equals('application/octet-stream'));
+    });
+
     test('cacheBytesDirectly, isCached, and getCachedBytes work seamlessly', () async {
       const url = 'https://firebasestorage.googleapis.com/test_image.png';
       final dummyBytes = Uint8List.fromList([1, 2, 3, 4, 5, 6, 7, 8]);

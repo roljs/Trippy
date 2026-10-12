@@ -7,7 +7,7 @@ import 'package:trippy/data/repositories/mock_trip_repository.dart';
 import 'package:trippy/models/models.dart';
 import 'package:trippy/services/offline/attachment_cache_service.dart';
 import 'package:trippy/services/offline/attachment_storage/attachment_storage_platform.dart';
-import 'package:trippy/services/offline/attachment_storage/attachment_storage_web.dart';
+import 'package:trippy/services/offline/attachment_storage/attachment_storage_memory.dart';
 import 'package:trippy/state/trip_providers.dart';
 import 'package:trippy/views/common/offline_sync_dialog.dart';
 
@@ -27,7 +27,7 @@ void main() {
     late Trip testTrip;
 
     setUp(() async {
-      AttachmentStorage.testOverride = AttachmentStorageWeb();
+      AttachmentStorage.testOverride = AttachmentStorageMemory();
       await AttachmentCacheService().cacheBytesDirectly(
         'https://example.com/japan_pass.pdf',
         Uint8List.fromList([1, 2, 3]),

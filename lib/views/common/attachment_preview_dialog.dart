@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/attachment_upload_helper.dart';
 import '../../services/offline/attachment_cache_service.dart';
+import '../../services/offline/attachment_opener/attachment_opener_platform.dart';
 
 /// Interactive in-app attachment preview dialog with offline support.
 class AttachmentPreviewDialog extends StatefulWidget {
@@ -52,6 +53,7 @@ class _AttachmentPreviewDialogState extends State<AttachmentPreviewDialog> {
 
   bool get _isImage => AttachmentCacheService.isImage(_cleanUrl);
   bool get _isPdf => AttachmentCacheService.isPdf(_cleanUrl);
+  String get _mimeType => AttachmentCacheService.resolveMimeType(_cleanUrl);
 
   @override
   void initState() {
@@ -122,23 +124,40 @@ class _AttachmentPreviewDialogState extends State<AttachmentPreviewDialog> {
   }
 
   Future<void> _openExternal() async {
-    if (_localFilePath != null && !kIsWeb) {
-      try {
-        final uri = Uri.file(_localFilePath!);
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri);
-          return;
-        }
-      } catch (_) {}
+    // 1. If cached offline bytes or local file exist, open the cached offline copy!
+    if (_cachedBytes != null || (_localFilePath != null && !kIsWeb)) {
+      final success = await AttachmentOpener.openAttachment(
+        localFilePath: _localFilePath,
+        fileBytes: _cachedBytes,
+        fileName: _displayName,
+        mimeType: _mimeType,
+      );
+      if (success) return;
     }
 
+    // 2. If online and valid URL, open external URL
     if (AttachmentUploadHelper.isUrl(_cleanUrl)) {
       try {
         final uri = Uri.parse(_cleanUrl);
         if (await canLaunchUrl(uri)) {
           await launchUrl(uri, mode: LaunchMode.externalApplication);
+          return;
         }
       } catch (_) {}
+    }
+
+    // 3. User is offline and document was not cached or cannot be opened
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _isCached
+                ? 'Unable to open file with installed document viewers.'
+                : 'Attachment not available offline. Please reconnect to the internet to download it.',
+          ),
+          backgroundColor: Colors.orange.shade800,
+        ),
+      );
     }
   }
 

@@ -290,13 +290,20 @@ In Day Planner, implement the following features:
    - **Platform-Agnostic Attachment Storage Layer (`lib/services/offline/attachment_storage/`)**:
      - `AttachmentStorage` abstract platform interface with runtime and test overrides.
      - `AttachmentStorageIo`: On mobile (iOS, Android) and desktop (Windows, macOS, Linux), stores attachment files locally in `trippy_attachments_cache/` using `path_provider` with seamless fallback for tests and constrained environments.
-     - `AttachmentStorageWeb`: In-memory byte cache for Web environments where direct filesystem access is restricted.
+     - `AttachmentStorageWeb`: Persistent IndexedDB object store (`trippy_offline_attachments`) with in-memory caching and resilient fallback, preserving cached documents across page reloads.
+     - `AttachmentStorageMemory`: Standalone in-memory implementation for unit testing and headless environments.
+   - **Cloud Storage Bucket CORS Enablement**:
+     - Configured CORS policy on `gs://trippy-prod-4524f.firebasestorage.app` (`cors.json` with `origin: ["*"]`, methods: `["GET", "HEAD"]`), resolving browser CORS blocks so Web downloads via HTTP GET and Firebase Storage succeed reliably.
    - **Attachment Cache Service (`lib/services/offline/attachment_cache_service.dart`)**:
      - Computes SHA-256 hash keys for consistent, filesystem-safe local caching of URLs.
-     - Performs automatic file extension and MIME type detection (`.pdf`, `.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`).
+     - Performs automatic file extension and MIME type detection (`.pdf`, `.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`, `.docx`, etc.).
+     - Dual-mode downloading: direct HTTP GET with media tokens first, with graceful fallback to Firebase Storage SDK.
      - Eager local byte saving upon attachment upload via `AttachmentUploadHelper`.
      - Direct offline retrieval of raw bytes (`getCachedBytes`) or local file paths (`getCachedFilePath`).
      - Storage size tracking and cache wipe capabilities.
+   - **Platform-Agnostic File Opener (`lib/services/offline/attachment_opener/`)**:
+     - Native Mobile/Desktop: uses `open_filex` to launch cached files directly in system document viewers (Google Drive PDF viewer, Acrobat, QuickLook, etc.) via Android `FileProvider` without internet access.
+     - Web: uses `package:web` with `URL.createObjectURL(blob)` to open cached files locally in a new tab without requesting external network resources.
    - **Offline Sync Coordinator (`lib/services/offline/offline_sync_service.dart`)**:
      - `TripOfflineStatus` data model tracking cached counts for stays, flights, activities, total/cached attachments, and disk usage.
      - `prefetchTripForOffline(tripId)`: Eagerly downloads and warms Firestore cache for trip root, stays, flights, and daily activities, while sequentially downloading and caching all external attachments with granular progress reporting callbacks (`0% -> 100%`).
@@ -307,8 +314,8 @@ In Day Planner, implement the following features:
      - Full-featured in-app modal preview dialog supporting offline viewing.
      - Zoomable and pannable image viewer (`InteractiveViewer`) directly loading from cached offline bytes.
      - Dedicated PDF and document preview cards indicating local cache availability vs Cloud Storage.
-     - Open local file action on Desktop/Mobile (`Process.run` / `OpenFilex`) and external fallback launch via `url_launcher`.
-     - Offline status indicators (e.g., "Stored in local offline cache", "Make Available Offline").
+     - Both "View Document" and "Open External" open cached files locally via `AttachmentOpener`, completely eliminating the bug where `url_launcher` failed on mobile `file://` URIs and fell back to launching dead online Firebase Storage URLs while offline.
+     - When uncached and offline, provides a clear, actionable SnackBar notification explaining the file is not available offline rather than launching an unreachable URL.
    - **UI Integration & Offline Travel Mode Controls**:
      - **App Navigation Scaffold (`lib/views/common/app_nav_scaffold.dart`)**:
        - Added Offline Travel Mode action button (`Icons.cloud_sync_outlined`) in the top AppBar when an active trip is selected, showing a green check badge when fully cached offline.
@@ -317,7 +324,15 @@ In Day Planner, implement the following features:
        - Added "Offline Sync" icon button on each trip card's action row for 1-tap download and status inspection.
      - **Offline Sync Dialog (`lib/views/common/offline_sync_dialog.dart`)**:
        - Modern status modal showing detailed breakdown (Stays & Lodgings, Flights & Transportation, Daily Activities, Files & Attachments), live sync progress bar, "Make Available Offline" / "Update Offline Cache" button, and "Clear Cache" button.
+       - Accurately distinguishes fully cached trips ("Ready for Offline Travel") vs partially cached trips ("Partially Cached for Offline"), eliminating contradictory UI states.
      - **Settings Screen (`lib/views/settings/settings_screen.dart`)**:
        - Added "Offline Travel Storage" management card with dynamic cached size display and a "Clear File Cache" button.
      - **Notes & Attachments Chips (`lib/views/common/notes_and_attachments_section.dart`)**:
        - Attachment chips open `AttachmentPreviewDialog` on tap for instantaneous in-app offline preview.
+
+
+
+       # Iteration #26
+       1. Fix the UI in Day PLanner for activities that last 15mins and are next to others, the adjacent activity overlaps the UI of the 15min activity entirely covering its title.
+       2. Swap the order of the top-level buttong in the top right so that the Trip sharing button shows on the left next to the trip title (only on web, on mobile should remain hidden) and the trip notes, offline and settings are shown on the right  next to the account icon.
+       3. When adding activities, do not automatically add new places to the day (at day-level locations). If activity is added via the UI, upon saving the activity, only if the Activity happens in a new place/city, suggest adding the place to the Day, but allow the user to reject. 

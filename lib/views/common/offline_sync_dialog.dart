@@ -82,13 +82,16 @@ class _OfflineSyncDialogState extends ConsumerState<OfflineSyncDialog> {
           _progressMessage = null;
         });
 
+        final hasMissing = updatedStatus.hasMissingAttachments;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '✅ "${widget.trip.title}" is ready for offline travel! '
-              '(${updatedStatus.totalItems} items, ${updatedStatus.cachedAttachments} attachments cached)',
+              hasMissing
+                  ? '⚠️ Trip saved, but ${updatedStatus.totalAttachments - updatedStatus.cachedAttachments} attachments could not be cached.'
+                  : '✅ "${widget.trip.title}" is ready for offline travel! (${updatedStatus.totalItems} items, ${updatedStatus.cachedAttachments} attachments cached)',
             ),
-            backgroundColor: AppColors.success,
+            backgroundColor:
+                hasMissing ? Colors.orange.shade800 : AppColors.success,
             duration: const Duration(seconds: 4),
           ),
         );
@@ -291,25 +294,50 @@ class _OfflineSyncDialogState extends ConsumerState<OfflineSyncDialog> {
 
   Widget _buildStatusBanner() {
     final isCached = _status?.isDownloaded ?? false;
+    final hasMissing = _status?.hasMissingAttachments ?? false;
+    final isFullyReady = isCached && !hasMissing;
+
+    Color bannerColor;
+    Color borderColor;
+    IconData iconData;
+    String titleText;
+    String subtitleText;
+
+    if (isFullyReady) {
+      bannerColor = AppColors.success.withValues(alpha: 0.12);
+      borderColor = AppColors.success.withValues(alpha: 0.3);
+      iconData = Icons.cloud_done_rounded;
+      titleText = 'Ready for Offline Travel';
+      subtitleText = 'All stays, flights, daily activities, and attachments are cached.';
+    } else if (isCached && hasMissing) {
+      bannerColor = Colors.amber.withValues(alpha: 0.15);
+      borderColor = Colors.amber.shade600.withValues(alpha: 0.4);
+      iconData = Icons.cloud_queue_rounded;
+      titleText = 'Partially Cached for Offline';
+      subtitleText =
+          'All trip details are cached, but some attachments are missing or failed to download.';
+    } else {
+      bannerColor = Colors.orange.withValues(alpha: 0.12);
+      borderColor = Colors.orange.withValues(alpha: 0.3);
+      iconData = Icons.cloud_off_rounded;
+      titleText = 'Not Downloaded for Offline Use';
+      subtitleText = 'Tap the button below to save all trip details and files locally.';
+    }
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: isCached
-            ? AppColors.success.withValues(alpha: 0.12)
-            : Colors.orange.withValues(alpha: 0.12),
+        color: bannerColor,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: isCached
-              ? AppColors.success.withValues(alpha: 0.3)
-              : Colors.orange.withValues(alpha: 0.3),
-        ),
+        border: Border.all(color: borderColor),
       ),
       child: Row(
         children: [
           Icon(
-            isCached ? Icons.cloud_done_rounded : Icons.cloud_off_rounded,
-            color: isCached ? AppColors.success : Colors.orange,
+            iconData,
+            color: isFullyReady
+                ? AppColors.success
+                : (isCached ? Colors.amber.shade900 : Colors.orange),
             size: 22,
           ),
           const SizedBox(width: 12),
@@ -318,19 +346,17 @@ class _OfflineSyncDialogState extends ConsumerState<OfflineSyncDialog> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isCached
-                      ? 'Ready for Offline Travel'
-                      : 'Not Downloaded for Offline Use',
+                  titleText,
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
-                    color: isCached ? AppColors.success : Colors.orange.shade800,
+                    color: isFullyReady
+                        ? AppColors.success
+                        : (isCached ? Colors.amber.shade900 : Colors.orange.shade800),
                   ),
                 ),
                 Text(
-                  isCached
-                      ? 'All stays, flights, daily activities, and attachments are cached.'
-                      : 'Tap the button below to save all trip details and files locally.',
+                  subtitleText,
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                 ),
               ],

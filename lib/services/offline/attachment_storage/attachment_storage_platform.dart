@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'attachment_storage_stub.dart'
+    if (dart.library.html) 'attachment_storage_web.dart'
     if (dart.library.js_interop) 'attachment_storage_web.dart'
     if (dart.library.io) 'attachment_storage_io.dart';
 

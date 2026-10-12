@@ -149,7 +149,7 @@ class OfflineSyncService {
       for (int i = 0; i < total; i++) {
         final att = allAttachments[i];
         final pct = 0.7 + (0.28 * ((i + 1) / total));
-        onProgress?.call('Downloading attachment ${i + 1} of $total...', pct);
+        onProgress?.call('Caching attachment ${i + 1} of $total...', pct);
         try {
           final res = await _attachmentCache.downloadAndCache(att);
           if (res != null) {
@@ -161,7 +161,12 @@ class OfflineSyncService {
       }
     }
 
-    onProgress?.call('Trip ready for offline use!', 1.0);
+    onProgress?.call(
+      cachedCount == allAttachments.length
+          ? 'Trip ready for offline use!'
+          : 'Trip details cached ($cachedCount of ${allAttachments.length} files saved)',
+      1.0,
+    );
 
     final status = TripOfflineStatus(
       tripId: tripId,

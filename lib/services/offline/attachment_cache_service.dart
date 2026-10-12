@@ -52,6 +52,38 @@ class AttachmentCacheService {
     return extractExtension(rawUrlOrPath) == '.pdf';
   }
 
+  /// Resolves standard MIME type from extension or URL.
+  static String resolveMimeType(String rawUrlOrPath) {
+    final ext = extractExtension(rawUrlOrPath).toLowerCase();
+    switch (ext) {
+      case '.pdf':
+        return 'application/pdf';
+      case '.png':
+        return 'image/png';
+      case '.jpg':
+      case '.jpeg':
+        return 'image/jpeg';
+      case '.webp':
+        return 'image/webp';
+      case '.gif':
+        return 'image/gif';
+      case '.svg':
+        return 'image/svg+xml';
+      case '.txt':
+        return 'text/plain';
+      case '.doc':
+        return 'application/msword';
+      case '.docx':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      case '.xls':
+        return 'application/vnd.ms-excel';
+      case '.xlsx':
+        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      default:
+        return 'application/octet-stream';
+    }
+  }
+
   /// Checks if the attachment is available offline in the local cache.
   Future<bool> isCached(String rawUrlOrPath) async {
     final key = hashKey(rawUrlOrPath);
@@ -105,27 +137,27 @@ class AttachmentCacheService {
 
     Uint8List? downloadedBytes;
 
-    // 2. Try fetching directly via Firebase Storage ref if it's a firebase URL
-    if (cleanUrl.contains('firebasestorage.googleapis.com')) {
+    // 2. Try standard HTTP GET first (direct download with token / CORS support)
+    try {
+      final resp = await http.get(Uri.parse(cleanUrl)).timeout(
+        const Duration(seconds: 15),
+      );
+      if (resp.statusCode == 200) {
+        downloadedBytes = resp.bodyBytes;
+      } else {
+        debugPrint('AttachmentCacheService http.get returned status ${resp.statusCode} for $cleanUrl');
+      }
+    } catch (e) {
+      debugPrint('AttachmentCacheService http.get attempt failed: $e');
+    }
+
+    // 3. Fallback to FirebaseStorage SDK if HTTP failed
+    if (downloadedBytes == null && cleanUrl.contains('firebasestorage.googleapis.com')) {
       try {
         final ref = FirebaseStorage.instance.refFromURL(cleanUrl);
         downloadedBytes = await ref.getData(15 * 1024 * 1024); // max 15MB
       } catch (e) {
-        debugPrint('FirebaseStorage.refFromURL getData fallback: $e');
-      }
-    }
-
-    // 3. Fallback to standard HTTP GET request
-    if (downloadedBytes == null) {
-      try {
-        final resp = await http.get(Uri.parse(cleanUrl)).timeout(
-          const Duration(seconds: 15),
-        );
-        if (resp.statusCode == 200) {
-          downloadedBytes = resp.bodyBytes;
-        }
-      } catch (e) {
-        debugPrint('AttachmentCacheService http download failed: $e');
+        debugPrint('AttachmentCacheService FirebaseStorage.getData fallback failed: $e');
       }
     }
 
