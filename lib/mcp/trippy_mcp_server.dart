@@ -120,8 +120,14 @@ class TrippyMcpServer {
       // Extract authorization / key from query params or headers
       final queryKey = request.uri.queryParameters['key'] ??
           request.uri.queryParameters['pat'] ??
+          request.uri.queryParameters['token'] ??
           request.uri.queryParameters['apiKey'] ??
-          request.uri.queryParameters['passcode'];
+          request.uri.queryParameters['api_key'] ??
+          request.uri.queryParameters['apikey'] ??
+          request.uri.queryParameters['api-key'] ??
+          request.uri.queryParameters['passcode'] ??
+          request.uri.queryParameters['access_token'] ??
+          request.uri.queryParameters['auth'];
       final authHeader = request.headers.value(HttpHeaders.authorizationHeader);
       String? bearerToken;
       String? headerKey;
@@ -134,13 +140,16 @@ class TrippyMcpServer {
         }
       } else {
         headerKey = request.headers.value('x-api-key') ??
-            request.headers.value('x-pat');
+            request.headers.value('x-pat') ??
+            request.headers.value('x-token');
       }
 
       final effectiveKey = queryKey ?? headerKey;
 
       service.setIsHttpMode(true);
-      service.setHttpApiKey(effectiveKey);
+      if (effectiveKey != null && effectiveKey.isNotEmpty) {
+        service.setHttpApiKey(effectiveKey);
+      }
 
       if (bearerToken != null && bearerToken.isNotEmpty) {
         service.setAuth(token: bearerToken);
@@ -236,7 +245,8 @@ class TrippyMcpServer {
     request.response.headers.set('Connection', 'keep-alive');
 
     _sseClients.add(request.response);
-    request.response.write('event: endpoint\ndata: /messages\n\n');
+    final queryStr = request.uri.hasQuery ? '?${request.uri.query}' : '';
+    request.response.write('event: endpoint\ndata: /messages$queryStr\n\n');
 
     request.response.done.then((_) {
       _sseClients.remove(request.response);

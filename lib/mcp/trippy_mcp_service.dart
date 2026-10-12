@@ -472,7 +472,10 @@ class TrippyMcpService {
         (args['key'] as String?) ??
         (args['pat'] as String?) ??
         (args['passcode'] as String?) ??
-        (args['apiKey'] as String?);
+        (args['apiKey'] as String?) ??
+        (args['api_key'] as String?) ??
+        (args['apikey'] as String?) ??
+        (args['access_token'] as String?);
 
     // If caller requests logout or reverting to unauthenticated sample sandbox
     if (userId == 'sample_user' ||

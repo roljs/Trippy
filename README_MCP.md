@@ -80,17 +80,20 @@ Use the included `mcp_config.json`:
 - **Health Check**: `https://trippy-mcp-server-392329008088.us-central1.run.app/health`
 
 ### Gemini (Web, Mobile & AI Studio)
-- **URL**: `https://trippy-mcp-server-392329008088.us-central1.run.app/mcp`
+- **URL**: `https://trippy-mcp-server-392329008088.us-central1.run.app/mcp?key=YOUR_PERSONAL_ACCESS_TOKEN`
 - **Transport**: HTTP POST (JSON-RPC 2.0)
-- **Authentication**: Prompt in chat: *"Authenticate with Trippy using [your-email@example.com]"*
+- **Authentication**: **Automatic!** When the `key` parameter is set in the URL or query parameters, Gemini is pre-authenticated for every request. You do not need to ask Gemini to authenticate. You can immediately ask:
+  - *"What trips do I have in Trippy?"*
+  - *"Show my itinerary for Thailand"*
+  - *(Optional)* If you do prompt *"Authenticate me with Trippy"*, the server uses the configured key and verifies your email automatically.
 
 ### ChatGPT (Custom GPTs / Actions)
-- **Connector / Action URL**: `https://trippy-mcp-server-392329008088.us-central1.run.app/mcp` (or `/sse` for SSE clients)
+- **Connector / Action URL**: `https://trippy-mcp-server-392329008088.us-central1.run.app/mcp?key=YOUR_PERSONAL_ACCESS_TOKEN` (or `/sse?key=YOUR_PERSONAL_ACCESS_TOKEN`)
 
 ### Mobile Clients (iOS & Android MCP Apps)
 - In **Chatbox Mobile**, **LibreChat Mobile**, or **TypingMind**:
-  - Add server with URL: `https://trippy-mcp-server-392329008088.us-central1.run.app/mcp` (or `/sse`)
-  - Authenticate via `trippy_authenticate` tool call in chat.
+  - Add server with URL: `https://trippy-mcp-server-392329008088.us-central1.run.app/mcp?key=YOUR_PERSONAL_ACCESS_TOKEN`
+  - All calls are pre-authenticated with your personal access token bound to your account.
 
 ---
 
