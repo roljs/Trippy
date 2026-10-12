@@ -168,7 +168,7 @@ service cloud.firestore {
         'id', 'title', 'destination', 'startDate', 'endDate',
         'coverImageUrl', 'ownerId', 'inviteCode', 'defaultInviteRole',
         'members', 'memberIds', 'dayLocations', 'startLocation',
-        'endLocation', 'createdAt', 'updatedAt',
+        'endLocation', 'notes', 'links', 'attachments', 'createdAt', 'updatedAt',
         'lastModifiedAt', 'lastModifiedSource'
       ];
       return data.keys().hasOnly(allowed) &&
@@ -186,6 +186,9 @@ service cloud.firestore {
              (!('coverImageUrl' in data) || isValidUrl(data.coverImageUrl)) &&
              isValidOptionalString(data, 'startLocation', 200) &&
              isValidOptionalString(data, 'endLocation', 200) &&
+             isValidOptionalString(data, 'notes', 5000) &&
+             (!('links' in data) || isValidStringList(data.links, 100)) &&
+             (!('attachments' in data) || isValidStringList(data.attachments, 100)) &&
              (!('memberIds' in data) || isValidStringList(data.memberIds, 100)) &&
              (!('dayLocations' in data) || data.dayLocations == null || data.dayLocations is map) &&
              (!('lastModifiedAt' in data) || isValidDate(data.lastModifiedAt)) &&
@@ -203,18 +206,18 @@ service cloud.firestore {
              isValidString(data.id, 1, 100) &&
              data.tripId == tripId &&
              data.type in ['hotel', 'rental', 'overnightFlight', 'nightTrain'] &&
-             isValidString(data.name, 1, 200) &&
+             isValidString(data.name, 1, 500) &&
              isValidDate(data.checkInDate) &&
              isValidDate(data.checkOutDate) &&
-             isValidOptionalString(data, 'address', 500) &&
+             isValidOptionalString(data, 'address', 1000) &&
              isValidOptionalString(data, 'checkInTime', 20) &&
              isValidOptionalString(data, 'checkOutTime', 20) &&
-             isValidOptionalString(data, 'confirmationCode', 100) &&
-             isValidOptionalString(data, 'notes', 2000) &&
+             isValidOptionalString(data, 'confirmationCode', 200) &&
+             isValidOptionalString(data, 'notes', 5000) &&
              (!('overnightFlight' in data) || data.overnightFlight == null || data.overnightFlight is map) &&
              (!('linkedActivityIds' in data) || isValidStringList(data.linkedActivityIds, 100)) &&
-             (!('links' in data) || isValidStringList(data.links, 50)) &&
-             (!('attachments' in data) || isValidStringList(data.attachments, 50)) &&
+             (!('links' in data) || isValidStringList(data.links, 100)) &&
+             (!('attachments' in data) || isValidStringList(data.attachments, 100)) &&
              (!('lastModifiedAt' in data) || isValidDate(data.lastModifiedAt)) &&
              (!('lastModifiedSource' in data) || data.lastModifiedSource == null || data.lastModifiedSource in ['ui', 'mcp']);
     }
@@ -244,11 +247,11 @@ service cloud.firestore {
              isValidOptionalString(data, 'terminal', 50) &&
              isValidOptionalString(data, 'gate', 50) &&
              isValidOptionalString(data, 'seat', 50) &&
-             isValidOptionalString(data, 'bookingRef', 100) &&
-             isValidOptionalString(data, 'notes', 2000) &&
+             isValidOptionalString(data, 'bookingRef', 200) &&
+             isValidOptionalString(data, 'notes', 5000) &&
              (!('linkedActivityIds' in data) || isValidStringList(data.linkedActivityIds, 100)) &&
-             (!('links' in data) || isValidStringList(data.links, 50)) &&
-             (!('attachments' in data) || isValidStringList(data.attachments, 50)) &&
+             (!('links' in data) || isValidStringList(data.links, 100)) &&
+             (!('attachments' in data) || isValidStringList(data.attachments, 100)) &&
              (!('lastModifiedAt' in data) || isValidDate(data.lastModifiedAt)) &&
              (!('lastModifiedSource' in data) || data.lastModifiedSource == null || data.lastModifiedSource in ['ui', 'mcp']);
     }
@@ -268,26 +271,26 @@ service cloud.firestore {
              data.tripId == tripId &&
              isValidDate(data.date) &&
              isValidString(data.startTime, 1, 20) &&
-             isValidString(data.title, 1, 200) &&
+             isValidString(data.title, 1, 500) &&
              data.category in ['attraction', 'dining', 'transport', 'entertainment', 'stay', 'custom'] &&
              data.bookingStatus in ['planned', 'booked', 'ticketed'] &&
              data.isCompleted is bool &&
              isValidOptionalString(data, 'endTime', 20) &&
-             isValidOptionalString(data, 'location', 500) &&
-             isValidOptionalString(data, 'confirmationRef', 100) &&
-             isValidOptionalString(data, 'ticketUrl', 1000) &&
-             isValidOptionalString(data, 'notes', 2000) &&
+             isValidOptionalString(data, 'location', 1000) &&
+             isValidOptionalString(data, 'confirmationRef', 200) &&
+             isValidOptionalString(data, 'ticketUrl', 2000) &&
+             isValidOptionalString(data, 'notes', 5000) &&
              isValidOptionalString(data, 'stayId', 100) &&
              isValidOptionalString(data, 'flightId', 100) &&
              isValidOptionalString(data, 'mealType', 50) &&
-             isValidOptionalString(data, 'fromLocation', 500) &&
-             isValidOptionalString(data, 'toLocation', 500) &&
+             isValidOptionalString(data, 'fromLocation', 1000) &&
+             isValidOptionalString(data, 'toLocation', 1000) &&
              isValidOptionalString(data, 'fromStayId', 100) &&
              isValidOptionalString(data, 'toStayId', 100) &&
              (!('transportDirection' in data) || data.transportDirection == null || data.transportDirection in ['to_airport', 'from_airport']) &&
              (!('cost' in data) || data.cost == null || (data.cost is number && data.cost >= 0)) &&
-             (!('links' in data) || isValidStringList(data.links, 50)) &&
-             (!('attachments' in data) || isValidStringList(data.attachments, 50)) &&
+             (!('links' in data) || isValidStringList(data.links, 100)) &&
+             (!('attachments' in data) || isValidStringList(data.attachments, 100)) &&
              (!('lastModifiedAt' in data) || isValidDate(data.lastModifiedAt)) &&
              (!('lastModifiedSource' in data) || data.lastModifiedSource == null || data.lastModifiedSource in ['ui', 'mcp']);
     }
@@ -386,6 +389,17 @@ service cloud.firestore {
         allow update: if canEditParentTrip(tripId) && isValidActivity(request.resource.data, tripId);
         allow delete: if canEditParentTrip(tripId);
       }
+    }
+
+    // ===============================================================
+    // Collection Rules: MCP API Keys (Personal Access Tokens)
+    // ===============================================================
+    match /mcp_api_keys/{keyHash} {
+      allow read, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() &&
+                    request.resource.data.userId == request.auth.uid &&
+                    request.resource.data.enabled is bool;
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
     }
 
     // Default deny all other paths

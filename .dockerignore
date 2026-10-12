@@ -1,0 +1,16 @@
+.git
+.github
+.dart_tool
+.flutter-plugins-dependencies
+.pub-cache
+.pub
+build/
+android/
+ios/
+windows/
+macos/
+linux/
+web/
+test/
+*.md
+*.bat

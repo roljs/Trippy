@@ -23,6 +23,11 @@
   - [Step 4: Run the Application](#step-4-run-the-application)
 - [Testing & Quality Verification](#-testing--quality-verification)
 - [Building for Production](#-building-for-production)
+- [Model Context Protocol (MCP) Server](#-model-context-protocol-mcp-server)
+  - [Web Client Configuration](#-web-client-configuration)
+  - [Mobile Client Configuration (iOS & Android)](#-mobile-client-configuration-ios--android)
+  - [Desktop Clients & IDEs](#-desktop-clients--ides-claude-desktop-antigravity-ide-cursor)
+  - [Authentication & Security](#-authentication--security)
 - [Troubleshooting](#-troubleshooting)
 
 ---
@@ -255,6 +260,105 @@ flutter build apk --release
 # App Bundle (for Google Play)
 flutter build appbundle --release
 ```
+
+---
+
+## 🤖 Model Context Protocol (MCP) Server
+
+Trippy features an official **Model Context Protocol (MCP)** server that connects conversational AI assistants (**Gemini**, **ChatGPT**, **Claude**, **Antigravity IDE**, **Cursor**, as well as mobile & web AI clients) directly to your live travel itineraries.
+
+- **Hosted Server Endpoint (Streamable HTTP POST)**:  
+  `https://trippy-mcp-server-392329008088.us-central1.run.app/mcp`
+- **Server-Sent Events (SSE) Endpoint**:  
+  `https://trippy-mcp-server-392329008088.us-central1.run.app/sse`
+- **Secured Endpoint with Pre-shared Key (Recommended for AI Bots)**:  
+  `https://trippy-mcp-server-392329008088.us-central1.run.app/mcp?key=YOUR_SECRET_KEY&email=YOUR_EMAIL`
+- **Health Check Endpoint**:  
+  `https://trippy-mcp-server-392329008088.us-central1.run.app/health`
+
+---
+
+### 🌐 Web Client Configuration
+
+#### 1. Grok Bot / Gemini / ChatGPT Actions / Remote AI Clients
+- **MCP Server URL**:  
+  `https://trippy-mcp-server-392329008088.us-central1.run.app/mcp?key=YOUR_SECRET_KEY`
+  *(Or configure header `X-API-Key: YOUR_SECRET_KEY` or `Authorization: Bearer YOUR_SECRET_KEY`)*
+- **Transport**: Streamable HTTP (JSON-RPC 2.0 via `POST`)
+- **Headers**:
+  ```http
+  Content-Type: application/json
+  ```
+- **Configuration Steps**:
+  1. Open your AI client's **MCP Server Settings** / **Custom Actions** / **Tools**.
+  2. Add the URL with your secret pre-shared key:  
+     `https://trippy-mcp-server-392329008088.us-central1.run.app/mcp?key=YOUR_SECRET_KEY`
+  3. **Authenticate**: In your conversation, prompt:
+     > *"Authenticate with Trippy using my email [your-email@example.com] and passcode [YOUR_SECRET_KEY]"*
+     *(Or if you passed `&email=...` in the server URL, your account is automatically authenticated on connect!)*
+  4. Once authenticated, your AI assistant can query trips, modify activities, update accommodations, manage flights, and apply daily itineraries using `trippy_apply_suggested_itinerary`.
+
+---
+
+### 📱 Mobile Client Configuration (iOS & Android)
+
+You can interact with your Trippy travel itineraries on mobile devices through mobile AI assistants (such as **Grok Bot**, the **Gemini Mobile App**, **ChatGPT iOS/Android**, or mobile MCP clients like **Chatbox Mobile**, **LibreChat Mobile**, or **Apple Shortcuts**):
+
+#### 1. Mobile MCP Apps (Chatbox, LibreChat Mobile, TypingMind Mobile)
+1. Open the mobile app's **Settings** → **MCP Servers** (or **Tools & Extensions**).
+2. Tap **Add Server**:
+   - **Name**: `Trippy MCP`
+   - **Type**: `HTTP` or `SSE`
+   - **URL**:
+     - **For HTTP**: `https://trippy-mcp-server-392329008088.us-central1.run.app/mcp?key=YOUR_SECRET_KEY`
+     - **For SSE**: `https://trippy-mcp-server-392329008088.us-central1.run.app/sse?key=YOUR_SECRET_KEY`
+3. Save and enable the server.
+
+#### 2. Voice & Chat Workflows on Mobile
+With the Trippy MCP tool active in your mobile assistant session, you can use natural voice or text commands on your phone:
+- *"What activities do I have scheduled for tomorrow in Tokyo?"*
+- *"Add a dinner reservation at 8:00 PM at Gonpachi Nishiazabu."*
+- *"Attach my booking reservation link https://... to my hotel in Hanoi."*
+- *"Here is our planned day for Siem Reap: Angkor Wat sunrise, Bayon temple at 10 AM, and dinner in Pub Street. Apply this to my trip."*
+
+All modifications are instantly stamped with the `lastModifiedSource: "mcp"` robot badge in the Trippy app and sync in real time across all devices.
+
+---
+
+### 💻 Desktop Clients & IDEs (Claude Desktop, Antigravity IDE, Cursor)
+
+#### Remote Cloud Run Connection via SSE
+Add the following to your `claude_desktop_config.json` or `mcp_config.json`:
+```json
+{
+  "mcpServers": {
+    "trippy": {
+      "url": "https://trippy-mcp-server-392329008088.us-central1.run.app/sse?key=YOUR_SECRET_KEY"
+    }
+  }
+}
+```
+
+#### Local CLI / Standard I/O (Offline Development)
+```bash
+dart run bin/trippy_mcp_server.dart
+```
+
+---
+
+### 🔐 Security & Multi-Layer Authentication Gates
+
+To protect personal travel data when hosting an MCP server on public cloud infrastructure (Cloud Run):
+
+1. **Pre-Shared API Key / Passcode Gate (`TRIPPY_API_KEY`)**:
+   - Cloud Run server enforces the configured `TRIPPY_API_KEY` secret.
+   - Any remote request without the valid key or token is blocked from accessing private trips.
+2. **Cryptographic Firebase ID Token Verification**:
+   - Authentications with `idToken` are verified against Google's Identity Toolkit API (`accounts:lookup`). Expired, forged, or invalid JWTs are rejected.
+3. **No Unverified Email Logins**:
+   - Self-asserted email logins without credentials are strictly rejected on public HTTP endpoints (`Security Gate Active`).
+4. **Sandboxed Default Mode**:
+   - Unauthenticated or unauthorized callers are quarantined in an in-memory sample sandbox (`sample_trip.json`). Changes never reach Cloud Firestore.
 
 ---
 

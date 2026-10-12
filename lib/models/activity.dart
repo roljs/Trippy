@@ -66,6 +66,8 @@ enum BookingStatus {
   static BookingStatus fromString(String? status) {
     switch (status?.toLowerCase()) {
       case 'booked':
+      case 'confirmed':
+      case 'reserved':
         return BookingStatus.booked;
       case 'ticketed':
         return BookingStatus.ticketed;

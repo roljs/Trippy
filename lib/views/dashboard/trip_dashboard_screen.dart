@@ -10,8 +10,10 @@ import '../../services/export_import/trip_export_service.dart';
 import '../../state/trip_providers.dart';
 import '../../data/samples/thailandia_sample_trip.dart';
 import '../../data/repositories/firestore_trip_repository.dart';
+import '../common/notes_and_attachments_section.dart';
 import '../common/user_account_button.dart';
 import '../logistics/widgets/transport_header_bridge_widget.dart';
+import '../settings/settings_screen.dart';
 
 class TripDashboardScreen extends ConsumerWidget {
   final VoidCallback? onTripSelected;
@@ -23,6 +25,10 @@ class TripDashboardScreen extends ConsumerWidget {
       context: context,
       builder: (ctx) => _CreateTripDialog(ref: ref),
     );
+  }
+
+  void _showEditTripModal(BuildContext context, WidgetRef ref, Trip trip) {
+    EditTripDialog.show(context, ref, trip);
   }
 
   void _showJoinTripDialog(BuildContext context, WidgetRef ref) {
@@ -255,6 +261,16 @@ class TripDashboardScreen extends ConsumerWidget {
             icon: const Icon(Icons.add_rounded),
             onPressed: () => _showCreateTripDialog(context, ref),
           ),
+          IconButton(
+            tooltip: 'Settings & AI Tokens',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              );
+            },
+          ),
           const UserAccountButton(),
           const SizedBox(width: 8),
         ],
@@ -438,9 +454,104 @@ class TripDashboardScreen extends ConsumerWidget {
                             ),
                           ],
                         ),
+
+                        // Trip-level Notes, Links & Attachments Summary Badges
+                        if ((trip.notes != null && trip.notes!.isNotEmpty) ||
+                            trip.links.isNotEmpty ||
+                            trip.attachments.isNotEmpty) ...[
+                          const SizedBox(height: 10),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 6,
+                            children: [
+                              if (trip.notes != null && trip.notes!.isNotEmpty)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.amber.shade50,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                        color: Colors.amber.shade200, width: 0.8),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.notes_rounded,
+                                          size: 13, color: Colors.amber.shade900),
+                                      const SizedBox(width: 4),
+                                      const Text(
+                                        'Notes',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: Color(0xFF78350F),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              if (trip.links.isNotEmpty)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.shade50,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                        color: Colors.blue.shade200, width: 0.8),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.link_rounded,
+                                          size: 13, color: Colors.blue.shade800),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '${trip.links.length} ${trip.links.length == 1 ? 'Link' : 'Links'}',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.blue.shade900,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              if (trip.attachments.isNotEmpty)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.purple.shade50,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                        color: Colors.purple.shade200, width: 0.8),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.attach_file_rounded,
+                                          size: 13, color: Colors.purple.shade800),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '${trip.attachments.length} ${trip.attachments.length == 1 ? 'File' : 'Files'}',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.purple.shade900,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+
                         const Divider(height: 24),
 
-                        // Bottom Action Row: Role Badge + Invite Code + Share Button
+                        // Bottom Action Row: Role Badge + Invite Code + Edit + Share Button
                         Row(
                           children: [
                             // Role Badge
@@ -476,6 +587,13 @@ class TripDashboardScreen extends ConsumerWidget {
                               ),
                             ),
                             const Spacer(),
+                            if (role.canEdit)
+                              IconButton(
+                                icon: const Icon(Icons.edit_note_rounded, size: 22),
+                                tooltip: 'Edit Trip Details, Notes & Attachments',
+                                onPressed: () =>
+                                    _showEditTripModal(context, ref, trip),
+                              ),
                             IconButton(
                               icon: const Icon(Icons.share_rounded, size: 20),
                               tooltip: 'Share & Invite Co-Travelers',
@@ -589,6 +707,9 @@ class _CreateTripDialogState extends State<_CreateTripDialog> {
   final _destinationController = TextEditingController();
   final _startLocationController = TextEditingController();
   final _endLocationController = TextEditingController();
+  final _notesController = TextEditingController();
+  List<String> _links = [];
+  List<String> _attachments = [];
   DateTime _startDate = DateTime.now().add(const Duration(days: 7));
   DateTime _endDate = DateTime.now().add(const Duration(days: 14));
   MemberRole _defaultRole = MemberRole.editor;
@@ -601,6 +722,7 @@ class _CreateTripDialogState extends State<_CreateTripDialog> {
     _destinationController.dispose();
     _startLocationController.dispose();
     _endLocationController.dispose();
+    _notesController.dispose();
     super.dispose();
   }
 
@@ -795,6 +917,20 @@ class _CreateTripDialogState extends State<_CreateTripDialog> {
                 setState(() => _defaultRole = set.first);
               },
             ),
+            const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 8),
+            NotesAndAttachmentsSection(
+              notesController: _notesController,
+              notesLabel: 'Trip Notes & Overview',
+              notesHint:
+                  'Add packing lists, overall trip notes, guidance, or tips...',
+              links: _links,
+              onLinksChanged: (updated) => setState(() => _links = updated),
+              attachments: _attachments,
+              onAttachmentsChanged: (updated) =>
+                  setState(() => _attachments = updated),
+            ),
           ],
         ),
       ),
@@ -834,6 +970,11 @@ class _CreateTripDialogState extends State<_CreateTripDialog> {
               members: {currentUserId: MemberRole.owner},
               startLocation: startLoc,
               endLocation: endLoc,
+              notes: _notesController.text.trim().isNotEmpty
+                  ? _notesController.text.trim()
+                  : null,
+              links: _links,
+              attachments: _attachments,
               createdAt: DateTime.now(),
               updatedAt: DateTime.now(),
             );
@@ -915,6 +1056,253 @@ class _CreateTripDialogState extends State<_CreateTripDialog> {
             if (context.mounted) Navigator.pop(context);
           },
           child: const Text('Create Trip'),
+        ),
+      ],
+    );
+  }
+}
+
+class EditTripDialog extends StatefulWidget {
+  final WidgetRef ref;
+  final Trip trip;
+
+  const EditTripDialog({super.key, required this.ref, required this.trip});
+
+  static Future<void> show(BuildContext context, WidgetRef ref, Trip trip) {
+    return showDialog(
+      context: context,
+      builder: (ctx) => EditTripDialog(ref: ref, trip: trip),
+    );
+  }
+
+  @override
+  State<EditTripDialog> createState() => _EditTripDialogState();
+}
+
+class _EditTripDialogState extends State<EditTripDialog> {
+  late final TextEditingController _titleController;
+  late final TextEditingController _destinationController;
+  late final TextEditingController _startLocationController;
+  late final TextEditingController _endLocationController;
+  late final TextEditingController _notesController;
+  late DateTime _startDate;
+  late DateTime _endDate;
+  late List<String> _links;
+  late List<String> _attachments;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController(text: widget.trip.title);
+    _destinationController = TextEditingController(text: widget.trip.destination);
+    _startLocationController =
+        TextEditingController(text: widget.trip.startLocation ?? '');
+    _endLocationController =
+        TextEditingController(text: widget.trip.endLocation ?? '');
+    _notesController = TextEditingController(text: widget.trip.notes ?? '');
+    _startDate = widget.trip.startDate;
+    _endDate = widget.trip.endDate;
+    _links = List<String>.from(widget.trip.links);
+    _attachments = List<String>.from(widget.trip.attachments);
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _destinationController.dispose();
+    _startLocationController.dispose();
+    _endLocationController.dispose();
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: AppColors.primaryContainer.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(Icons.edit_note_rounded,
+                color: AppColors.primary, size: 22),
+          ),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              'Edit Trip Details & Notes',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 540,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: _titleController,
+                decoration: const InputDecoration(
+                  labelText: 'Trip Name',
+                  hintText: 'e.g. Summer in Italy',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _destinationController,
+                decoration: const InputDecoration(
+                  labelText: 'Destination',
+                  hintText: 'e.g. Rome & Florence, Italy',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _startLocationController,
+                decoration: const InputDecoration(
+                  labelText: 'Starting Location',
+                  hintText: 'e.g. San Francisco or Origin City',
+                  helperText: 'Where does your journey begin?',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _endLocationController,
+                decoration: const InputDecoration(
+                  labelText: 'Finishing Location',
+                  hintText: 'e.g. San Francisco or Return City',
+                  helperText: 'Where does your journey end?',
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Trip Dates',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 6),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final range = await showDateRangePicker(
+                    context: context,
+                    firstDate: DateTime(2025),
+                    lastDate: DateTime(2030),
+                    initialDateRange:
+                        DateTimeRange(start: _startDate, end: _endDate),
+                  );
+                  if (range != null) {
+                    setState(() {
+                      _startDate = range.start;
+                      _endDate = range.end;
+                    });
+                  }
+                },
+                icon: const Icon(Icons.date_range_rounded, size: 18),
+                label: Text(
+                  DateFormatters.formatTripDateRange(_startDate, _endDate),
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
+
+              // Trip-level Notes, Links and Attachments Section
+              NotesAndAttachmentsSection(
+                notesController: _notesController,
+                notesLabel: 'Trip Notes & Overview',
+                notesHint:
+                    'Add packing lists, overall trip notes, guidance, or tips...',
+                links: _links,
+                onLinksChanged: (updated) => setState(() => _links = updated),
+                attachments: _attachments,
+                onAttachmentsChanged: (updated) =>
+                    setState(() => _attachments = updated),
+                tripId: widget.trip.id,
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isSaving ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton.icon(
+          onPressed: _isSaving
+              ? null
+              : () async {
+                  if (_titleController.text.trim().isEmpty) return;
+
+                  setState(() => _isSaving = true);
+                  final repo = widget.ref.read(tripRepositoryProvider);
+
+                  final updated = widget.trip.copyWith(
+                    title: _titleController.text.trim(),
+                    destination: _destinationController.text.trim().isEmpty
+                        ? _titleController.text.trim()
+                        : _destinationController.text.trim(),
+                    startLocation:
+                        _startLocationController.text.trim().isNotEmpty
+                            ? _startLocationController.text.trim()
+                            : null,
+                    endLocation: _endLocationController.text.trim().isNotEmpty
+                        ? _endLocationController.text.trim()
+                        : null,
+                    startDate: _startDate,
+                    endDate: _endDate,
+                    notes: _notesController.text.trim().isNotEmpty
+                        ? _notesController.text.trim()
+                        : null,
+                    links: _links,
+                    attachments: _attachments,
+                    updatedAt: DateTime.now(),
+                    lastModifiedAt: DateTime.now(),
+                    lastModifiedSource: 'ui',
+                  );
+
+                  try {
+                    await repo.updateTrip(updated);
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content:
+                              Text('Trip details and notes updated successfully!'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    setState(() => _isSaving = false);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Failed to update trip: $e'),
+                          backgroundColor: Colors.red.shade700,
+                        ),
+                      );
+                    }
+                  }
+                },
+          icon: _isSaving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Icon(Icons.check_rounded, size: 18),
+          label: const Text('Save Changes'),
         ),
       ],
     );

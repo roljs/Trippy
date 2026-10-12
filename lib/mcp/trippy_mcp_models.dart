@@ -103,22 +103,45 @@ class TrippyMcpToolDefinitions {
     const McpTool(
       name: 'trippy_authenticate',
       description:
-          'Authenticate the Trippy MCP session with a Google/Firebase Auth ID token '
-          'for Firebase project "trippy-prod-4524f", or set current user context.',
+          'Authenticate the Trippy MCP session to access Cloud Firestore trips. '
+          'Requires either a Personal Access Token (PAT) (token/apiKey), '
+          'a pre-configured server key, or a verified Google/Firebase Auth ID token (idToken). '
+          'To log out or revert to the unauthenticated in-memory sample sandbox, '
+          'pass userId: "sample_user" or call with empty arguments.',
       inputSchema: {
         'type': 'object',
         'properties': {
-          'idToken': {
+          'token': {
             'type': 'string',
-            'description': 'Google or Firebase Auth Bearer ID token.',
+            'description': 'Personal Access Token (e.g. "trippy_pat_...") or verified Firebase ID token.',
           },
-          'userId': {
+          'key': {
             'type': 'string',
-            'description': 'User UID (if mocking or simulating user context).',
+            'description': 'Personal Access Token (e.g. "trippy_pat_...") or API key.',
+          },
+          'pat': {
+            'type': 'string',
+            'description': 'Personal Access Token (e.g. "trippy_pat_...").',
+          },
+          'apiKey': {
+            'type': 'string',
+            'description': 'Alias for token or Personal Access Token.',
+          },
+          'passcode': {
+            'type': 'string',
+            'description': 'Alias for apiKey / token.',
           },
           'email': {
             'type': 'string',
-            'description': 'User email address.',
+            'description': 'User email address to verify against the Personal Access Token.',
+          },
+          'idToken': {
+            'type': 'string',
+            'description': 'Verified Google or Firebase Auth Bearer ID token.',
+          },
+          'userId': {
+            'type': 'string',
+            'description': 'User UID, or "sample_user" to revert to unauthenticated mode.',
           },
         },
       },
@@ -177,6 +200,17 @@ class TrippyMcpToolDefinitions {
           'coverImageUrl': {'type': 'string', 'description': 'Optional cover banner URL.'},
           'startLocation': {'type': 'string', 'description': 'Origin city/airport.'},
           'endLocation': {'type': 'string', 'description': 'Return city/airport.'},
+          'notes': {'type': 'string', 'description': 'Optional overall trip notes or itinerary summary.'},
+          'links': {
+            'type': 'array',
+            'description': 'Optional list of URLs, "Label|URL" strings, or {"label", "url"} objects.',
+            'items': {'type': 'string'},
+          },
+          'attachments': {
+            'type': 'array',
+            'description': 'Optional list of document URLs or attachment strings.',
+            'items': {'type': 'string'},
+          },
         },
         'required': ['title', 'destination', 'startDate', 'endDate'],
       },
@@ -197,6 +231,27 @@ class TrippyMcpToolDefinitions {
           'coverImageUrl': {'type': 'string', 'description': 'Updated cover banner URL.'},
           'startLocation': {'type': 'string', 'description': 'Updated start location.'},
           'endLocation': {'type': 'string', 'description': 'Updated end location.'},
+          'notes': {'type': 'string', 'description': 'Updated trip notes.'},
+          'links': {
+            'type': 'array',
+            'description': 'Replace all trip links.',
+            'items': {'type': 'string'},
+          },
+          'addLinks': {
+            'type': 'array',
+            'description': 'Append links to existing trip links without replacing.',
+            'items': {'type': 'string'},
+          },
+          'attachments': {
+            'type': 'array',
+            'description': 'Replace all trip attachments.',
+            'items': {'type': 'string'},
+          },
+          'addAttachments': {
+            'type': 'array',
+            'description': 'Append attachments to existing trip attachments without replacing.',
+            'items': {'type': 'string'},
+          },
         },
         'required': ['tripId'],
       },
@@ -257,6 +312,16 @@ class TrippyMcpToolDefinitions {
           },
           'stayId': {'type': 'string', 'description': 'Optional linked stay ID.'},
           'flightId': {'type': 'string', 'description': 'Optional linked flight ID.'},
+          'links': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description': 'List of reference URLs or "Label|URL" strings (e.g. ["Official Guide|https://..."]). Accepts ALL web URLs unconditionally (including Expedia, Booking, Airbnb, airline reservations, or session-protected links). Trippy stores URLs directly as bookmarks without fetching or validating them.',
+          },
+          'attachments': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description': 'List of attachment URLs or "Label|URL" strings.',
+          },
         },
         'required': ['tripId', 'date', 'startTime', 'title'],
       },
@@ -283,6 +348,27 @@ class TrippyMcpToolDefinitions {
           'cost': {'type': 'number', 'description': 'Updated cost.'},
           'bookingStatus': {'type': 'string', 'description': 'Updated booking status.'},
           'confirmationRef': {'type': 'string', 'description': 'Updated confirmation ref.'},
+          'ticketUrl': {'type': 'string', 'description': 'Updated ticket, reservation, or official website URL. Pass raw URL directly without pre-fetching.'},
+          'links': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description': 'Replace all links with this list of URLs or "Label|URL" strings (e.g. ["Official Website|https://..."]). Accepts ALL web URLs unconditionally. Do NOT pre-fetch or validate URLs with web browsing tools (which trigger bot PERMISSION_DENIED). Pass raw URL strings directly.',
+          },
+          'addLinks': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description': 'Append new links to the existing links array without overwriting existing links. Accepts ALL web URLs unconditionally. Do NOT pre-fetch or crawl URLs.',
+          },
+          'attachments': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description': 'Replace all attachments with this list of URLs or "Label|URL" strings.',
+          },
+          'addAttachments': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description': 'Append new attachments to existing attachments array.',
+          },
           'mealType': {'type': 'string', 'description': 'Updated meal type.'},
           'isCompleted': {'type': 'boolean', 'description': 'Whether the activity was completed.'},
         },
@@ -327,6 +413,16 @@ class TrippyMcpToolDefinitions {
           'checkOutTime': {'type': 'string', 'description': 'Check-out time (HH:mm). Defaults to 11:00.'},
           'confirmationCode': {'type': 'string', 'description': 'Reservation confirmation code.'},
           'notes': {'type': 'string', 'description': 'Notes or booking details.'},
+          'links': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description': 'List of booking, hotel, or guide URLs or "Label|URL" strings (e.g. ["Hotel Website|https://..."]). Accepts ALL web URLs unconditionally (including Expedia, Booking, Airbnb, private reservation links, session-protected URLs). The server stores URLs directly as bookmarks without crawling or validating external site accessibility.',
+          },
+          'attachments': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description': 'List of attachment URLs or "Label|URL" strings.',
+          },
         },
         'required': ['tripId', 'name', 'checkInDate', 'checkOutDate'],
       },
@@ -352,6 +448,26 @@ class TrippyMcpToolDefinitions {
           'checkOutTime': {'type': 'string', 'description': 'Updated check-out time.'},
           'confirmationCode': {'type': 'string', 'description': 'Updated confirmation code.'},
           'notes': {'type': 'string', 'description': 'Updated notes.'},
+          'links': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description': 'Replace all links with this list of URLs or "Label|URL" strings (e.g. ["Booking.com Reservation|https://..."]). Accepts ANY web URL unconditionally. Do NOT pre-fetch or validate URLs with web browsing tools (which trigger bot PERMISSION_DENIED). Pass raw URL strings directly.',
+          },
+          'addLinks': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description': 'Append new links to existing links array without overwriting existing links. Accepts ANY web URL unconditionally. Do NOT pre-fetch or crawl URLs.',
+          },
+          'attachments': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description': 'Replace all attachments with this list of URLs or "Label|URL" strings.',
+          },
+          'addAttachments': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description': 'Append new attachments to existing attachments array.',
+          },
         },
         'required': ['tripId', 'stayId'],
       },
@@ -394,6 +510,16 @@ class TrippyMcpToolDefinitions {
           'isOvernight': {'type': 'boolean', 'description': 'Whether flight spans overnight.'},
           'isNightStay': {'type': 'boolean', 'description': 'Whether flight counts as night accommodation.'},
           'notes': {'type': 'string', 'description': 'Flight notes.'},
+          'links': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description': 'List of flight/airline URLs or "Label|URL" strings.',
+          },
+          'attachments': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description': 'List of attachment URLs or "Label|URL" strings.',
+          },
         },
         'required': [
           'tripId',
@@ -429,6 +555,26 @@ class TrippyMcpToolDefinitions {
           'seat': {'type': 'string', 'description': 'Updated seat.'},
           'bookingRef': {'type': 'string', 'description': 'Updated booking ref.'},
           'notes': {'type': 'string', 'description': 'Updated notes.'},
+          'links': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description': 'Replace all links with this list of URLs or "Label|URL" strings. Accepts ANY web URL unconditionally (including airline confirmation or boarding pass links).',
+          },
+          'addLinks': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description': 'Append new links to existing links array without overwriting existing links. Accepts ANY web URL unconditionally.',
+          },
+          'attachments': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description': 'Replace all attachments with this list of URLs or "Label|URL" strings.',
+          },
+          'addAttachments': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description': 'Append new attachments to existing attachments array.',
+          },
         },
         'required': ['tripId', 'flightId'],
       },
@@ -453,7 +599,9 @@ class TrippyMcpToolDefinitions {
       name: 'trippy_apply_suggested_itinerary',
       description:
           'Directly translates and saves an approved AI-proposed daily itinerary into Trippy. '
-          'Creates scheduled activities, stays, and flights for the target date or date range. '
+          'Smart deduplication: If activities, stays, or flights already exist representing the planned items, '
+          'they are automatically updated in-place (preserving existing IDs, ticket links, and attachments) '
+          'instead of creating duplicates. New activities are seamlessly appended. '
           'All created and modified objects are automatically stamped with '
           'lastModifiedSource: "mcp" and current lastModifiedAt timestamp.',
       inputSchema: {
@@ -503,6 +651,18 @@ class TrippyMcpToolDefinitions {
                   'enum': ['planned', 'booked', 'ticketed'],
                   'description': 'Booking status (defaults to planned).',
                 },
+                'confirmationRef': {'type': 'string', 'description': 'Confirmation / reservation code.'},
+                'ticketUrl': {'type': 'string', 'description': 'Link to tickets or official website.'},
+                'links': {
+                  'type': 'array',
+                  'items': {'type': 'string'},
+                  'description': 'List of reference URLs or "Label|URL" strings or {"label", "url"} objects.',
+                },
+                'attachments': {
+                  'type': 'array',
+                  'items': {'type': 'string'},
+                  'description': 'List of attachment URLs or "Label|URL" strings.',
+                },
               },
               'required': ['title', 'startTime'],
             },
@@ -522,6 +682,16 @@ class TrippyMcpToolDefinitions {
                 'checkOutTime': {'type': 'string'},
                 'confirmationCode': {'type': 'string'},
                 'notes': {'type': 'string'},
+                'links': {
+                  'type': 'array',
+                  'items': {'type': 'string'},
+                  'description': 'List of lodging URLs or "Label|URL" strings (e.g. ["Hotel Website|https://..."]).',
+                },
+                'attachments': {
+                  'type': 'array',
+                  'items': {'type': 'string'},
+                  'description': 'List of attachment URLs or "Label|URL" strings.',
+                },
               },
               'required': ['name', 'checkInDate', 'checkOutDate'],
             },
@@ -543,12 +713,108 @@ class TrippyMcpToolDefinitions {
                 'seat': {'type': 'string'},
                 'bookingRef': {'type': 'string'},
                 'notes': {'type': 'string'},
+                'links': {
+                  'type': 'array',
+                  'items': {'type': 'string'},
+                  'description': 'List of flight URLs or "Label|URL" strings.',
+                },
+                'attachments': {
+                  'type': 'array',
+                  'items': {'type': 'string'},
+                  'description': 'List of attachment URLs or "Label|URL" strings.',
+                },
               },
               'required': ['airline', 'flightNumber', 'departureAirport', 'arrivalAirport', 'departureTime', 'arrivalTime'],
             },
           },
         },
         'required': ['tripId', 'date', 'activities'],
+      },
+    ),
+
+    // 17. Add Link or Attachment
+    const McpTool(
+      name: 'trippy_add_link',
+      description:
+          'Add a reference link or attachment URL to any existing Stay, Activity, Flight, or Trip. '
+          'Accepts ANY valid web URL format unconditionally (including Booking.com, Expedia, Airbnb, '
+          'airline bookings, or private reservation confirmation URLs). '
+          'CRITICAL FOR AI ASSISTANTS: Do NOT use web search or internal browser tools to fetch, crawl, '
+          'or test this URL before calling this tool. Commercial booking portals block automated AI scrapers '
+          'with "PERMISSION_DENIED: This website is inaccessible". The Trippy server stores URLs purely as '
+          'database bookmarks and performs ZERO network reachability checks. Call this tool immediately '
+          'with the raw URL string.',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'tripId': {
+            'type': 'string',
+            'description': 'Trip ID. If omitted, uses active/current trip.',
+          },
+          'targetType': {
+            'type': 'string',
+            'enum': ['stay', 'activity', 'flight'],
+            'description': 'Type of entity to attach the link to ("stay", "activity", or "flight").',
+          },
+          'targetId': {
+            'type': 'string',
+            'description': 'ID of the stay, activity, or flight. If omitted, targetName can be used.',
+          },
+          'targetName': {
+            'type': 'string',
+            'description': 'Name or title of the hotel/stay, activity, or airline to find and attach to.',
+          },
+          'url': {
+            'type': 'string',
+            'description':
+                'The exact URL to store (e.g. "https://secure.booking.com/..."). '
+                'Pass the raw URL directly without pre-fetching or validating via web search.',
+          },
+          'label': {
+            'type': 'string',
+            'description': 'Optional human-readable label (e.g. "Expedia Itinerary", "Hotel Reservation").',
+          },
+          'isAttachment': {
+            'type': 'boolean',
+            'description': 'True if this should be added to attachments instead of links. Defaults to false.',
+          },
+        },
+        'required': ['targetType', 'url'],
+      },
+    ),
+
+    // 18. Generate Personal Access Token
+    const McpTool(
+      name: 'trippy_generate_pat',
+      description:
+          'Generate a new Personal Access Token (PAT) for the current user. '
+          'The token is cryptographically bound to your specific account UID/email and prevents any impersonation. '
+          'Use this token in Grok Bot, Gemini, ChatGPT Actions, or IDEs (e.g. ?key=trippy_pat_...).',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'name': {
+            'type': 'string',
+            'description': 'Friendly label for the token (e.g. "Grok Bot", "Cursor IDE", "Phone Assistant").',
+          },
+        },
+      },
+    ),
+
+    // 19. Revoke Personal Access Token
+    const McpTool(
+      name: 'trippy_revoke_pat',
+      description:
+          'Revoke an existing Personal Access Token (PAT) so it can no longer be used.',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'token': {
+            'type': 'string',
+            'description': 'The token string (e.g. "trippy_pat_...") to revoke.',
+          },
+        },
+        'required': ['token'],
       },
     ),
   ];

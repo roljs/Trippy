@@ -122,7 +122,10 @@
       "checkOutTime": "12:00",
       "confirmationCode": "6198871164",
       "notes": "PIN: 1043 (Confidential)",
-      "links": [],
+      "links": [
+        "Booking.com Hotel Page|https://www.booking.com/hotel/vn/xuan-son-lakeside-bungalow.html",
+        "Booking.com Reservation|https://secure.booking.com/myreservations.html?auth_key=6198871164&pincode=1043"
+      ],
       "attachments": [],
       "overnightFlight": null,
       "linkedActivityIds": [

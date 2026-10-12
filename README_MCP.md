@@ -18,7 +18,7 @@ The **Trippy MCP Server** enables conversational AI models (Claude, ChatGPT, Gem
 4. **Google & Firebase Authentication**:
    - Authenticates with Google accounts controlling Firebase access in project `trippy-prod-4524f`.
    - Supports Bearer ID tokens via HTTP headers, environment variable (`TRIPPY_AUTH_TOKEN`), or the `trippy_authenticate` tool.
-   - Works seamlessly offline with local fallback seed data (`thailandia_2026_trip.json`).
+   - Works seamlessly offline with in-memory sample sandbox data (`sample_trip.json`).
 
 ---
 
@@ -74,6 +74,24 @@ Use the included `mcp_config.json`:
 }
 ```
 
+### Remote Cloud Run Endpoints
+- **Streamable HTTP POST**: `https://trippy-mcp-server-392329008088.us-central1.run.app/mcp`
+- **Server-Sent Events (SSE)**: `https://trippy-mcp-server-392329008088.us-central1.run.app/sse`
+- **Health Check**: `https://trippy-mcp-server-392329008088.us-central1.run.app/health`
+
+### Gemini (Web, Mobile & AI Studio)
+- **URL**: `https://trippy-mcp-server-392329008088.us-central1.run.app/mcp`
+- **Transport**: HTTP POST (JSON-RPC 2.0)
+- **Authentication**: Prompt in chat: *"Authenticate with Trippy using [your-email@example.com]"*
+
+### ChatGPT (Custom GPTs / Actions)
+- **Connector / Action URL**: `https://trippy-mcp-server-392329008088.us-central1.run.app/mcp` (or `/sse` for SSE clients)
+
+### Mobile Clients (iOS & Android MCP Apps)
+- In **Chatbox Mobile**, **LibreChat Mobile**, or **TypingMind**:
+  - Add server with URL: `https://trippy-mcp-server-392329008088.us-central1.run.app/mcp` (or `/sse`)
+  - Authenticate via `trippy_authenticate` tool call in chat.
+
 ---
 
 ## Exposed MCP Tools
@@ -86,13 +104,35 @@ Use the included `mcp_config.json`:
 | `trippy_create_trip` | Creates a new trip. |
 | `trippy_update_trip` | Updates trip details and metadata. |
 | `trippy_set_day_locations` | Updates the city/neighborhood locations planned for a specific date. |
-| `trippy_create_activity` | Adds a scheduled activity stamped with `lastModifiedSource: "mcp"`. |
-| `trippy_update_activity` | Updates an activity stamped with `lastModifiedSource: "mcp"`. |
+| `trippy_create_activity` | Adds a scheduled activity with ticketUrl, links, and attachments. |
+| `trippy_update_activity` | Updates an activity (supports notes, cost, ticketUrl, links/addLinks, attachments/addAttachments). |
 | `trippy_delete_activity` | Deletes an activity from a trip. |
-| `trippy_create_stay` | Adds a hotel, rental, or overnight flight stay. |
-| `trippy_update_stay` | Updates a stay. |
+| `trippy_create_stay` | Adds a hotel, rental, or overnight flight stay with links and attachments. |
+| `trippy_update_stay` | Updates a stay (supports dates, times, notes, address, links/addLinks, attachments/addAttachments). |
 | `trippy_delete_stay` | Deletes a stay. |
-| `trippy_create_flight` | Adds a flight booking. |
-| `trippy_update_flight` | Updates a flight booking. |
+| `trippy_create_flight` | Adds a flight booking with links and attachments. |
+| `trippy_update_flight` | Updates a flight booking (supports seats, gates, terminals, notes, links/addLinks, attachments/addAttachments). |
 | `trippy_delete_flight` | Deletes a flight booking. |
+| `trippy_add_link` | Adds a reference link or attachment URL to any stay, activity, or flight. Supports all web URLs (including Expedia, Booking, Airbnb, or session-protected links) without external validation. |
 | `trippy_authenticate` | Authenticates session with Google/Firebase Auth credentials. |
+
+---
+
+## Hosting on Google Cloud Run
+
+To host the Trippy MCP Server on Google Cloud Run with streamable HTTP and SSE transport per the [Google Cloud MCP Server Hosting Guide](https://docs.cloud.google.com/run/docs/host-mcp-servers):
+
+```bash
+# 1. Select the Firebase/GCP project
+gcloud config set project trippy-prod-4524f
+
+# 2. Deploy directly using the included Dockerfile
+gcloud run deploy trippy-mcp-server \
+  --source . \
+  --region us-central1 \
+  --port 8080
+
+# 3. Connect local AI clients securely via Cloud Run proxy
+gcloud run services proxy trippy-mcp-server --region us-central1 --port=8080
+```
+

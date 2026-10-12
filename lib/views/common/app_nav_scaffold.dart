@@ -8,6 +8,7 @@ import '../dashboard/trip_dashboard_screen.dart';
 import '../day_planner/day_planner_view.dart';
 import '../flights/flights_view.dart';
 import '../logistics/logistics_view.dart';
+import '../settings/settings_screen.dart';
 import '../stays/stays_view.dart';
 import 'add_activity_sheet.dart';
 import 'add_flight_sheet.dart';
@@ -221,6 +222,23 @@ class _AppNavScaffoldState extends ConsumerState<AppNavScaffold> {
                 ],
               ),
               actions: [
+                if (activeTrip != null) ...[
+                  // Trip-level Notes, Links & Attachments button
+                  IconButton(
+                    icon: Badge(
+                      isLabelVisible: (activeTrip.notes != null &&
+                              activeTrip.notes!.trim().isNotEmpty) ||
+                          activeTrip.links.isNotEmpty ||
+                          activeTrip.attachments.isNotEmpty,
+                      smallSize: 8,
+                      child: const Icon(Icons.description_outlined),
+                    ),
+                    tooltip: 'Trip Notes & Attachments',
+                    onPressed: () {
+                      EditTripDialog.show(context, ref, activeTrip);
+                    },
+                  ),
+                ],
                 // Iteration 16: On mobile screens, remove Trip code with sharing button
                 // to avoid truncating trip name when UI real estate is limited
                 if (activeTrip != null && !isMobile) ...[
@@ -239,8 +257,19 @@ class _AppNavScaffoldState extends ConsumerState<AppNavScaffold> {
                       ref.read(navTabIndexProvider.notifier).setTab(5); // Switch to trips tab
                     },
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 4),
                 ],
+                IconButton(
+                  icon: const Icon(Icons.settings_outlined),
+                  tooltip: 'Settings & AI Tokens',
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const SettingsScreen(),
+                      ),
+                    );
+                  },
+                ),
                 const UserAccountButton(),
                 const SizedBox(width: 8),
               ],

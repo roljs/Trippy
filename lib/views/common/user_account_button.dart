@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_colors.dart';
 import '../../state/trip_providers.dart';
+import '../settings/settings_screen.dart';
 
 void showUserAccountDialog(BuildContext context, WidgetRef ref) {
   final user = ref.read(authServiceProvider).currentUser;
@@ -154,6 +155,35 @@ void showUserAccountDialog(BuildContext context, WidgetRef ref) {
                 color: AppColors.textMuted,
               ),
             ),
+          const Divider(height: 24),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.primaryContainer.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.settings_outlined,
+                  color: AppColors.primary, size: 20),
+            ),
+            title: const Text(
+              'Settings & AI Tokens',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+            ),
+            subtitle: const Text(
+              'Manage Personal Access Tokens for AI assistants (Grok Bot, Gemini, Claude)',
+              style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+            ),
+            trailing: const Icon(Icons.chevron_right_rounded, size: 20),
+            onTap: () {
+              Navigator.pop(ctx);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              );
+            },
+          ),
         ],
       ),
       actions: [

@@ -2061,36 +2061,40 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
               ),
             ),
             // 1. Hourly Grid Lines and Labels
-            for (int h = 0; h < 24; h++) ...[
+            for (int h = 0; h <= 24; h++) ...[
+              // Exact horizontal grid line positioned at y = h * hourHeight
               Positioned(
-                left: 0,
+                left: 52,
                 right: 0,
                 top: h * hourHeight,
+                height: 1,
                 child: IgnorePointer(
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 52,
-                        child: Text(
-                          _formatHourLabel(h),
-                          style: const TextStyle(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textMuted,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                      Expanded(
-                        child: Container(
-                          height: 1,
-                          color: Colors.grey.shade200,
-                        ),
-                      ),
-                    ],
+                  child: Container(
+                    color: Colors.grey.shade200,
                   ),
                 ),
               ),
+              // Hour label centered vertically around the grid line
+              if (h < 24)
+                Positioned(
+                  left: 0,
+                  width: 52,
+                  top: h * hourHeight - 7,
+                  height: 14,
+                  child: IgnorePointer(
+                    child: Center(
+                      child: Text(
+                        _formatHourLabel(h),
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textMuted,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ),
             ],
 
             // Semi-transparent ghost drop card indicating snapped target slot
@@ -2109,7 +2113,7 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                   final double ghostTop =
                       _hoverDropStartMinutes! * (hourHeight / 60.0);
                   final double ghostHeight =
-                      max(40.0, durationMin * (hourHeight / 60.0));
+                      max(48.0, durationMin * (hourHeight / 60.0));
                   final catColor = _getCategoryColor(act.category);
                   final ghostEndMin =
                       min(24 * 60 - 1, _hoverDropStartMinutes! + durationMin);
@@ -2252,10 +2256,12 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                           ? _resizePreviewDurationMinutes!
                           : durationMin;
 
-                  // Enforce readable minimum height of 40 dp
-                  final clampedDuration = max(40, effectiveDurationMin);
+                  // Enforce readable minimum height of 48 dp so short activities (<= 15 mins) remain clearly visible
+                  const double minActivityHeight = 48.0;
+                  final double calculatedHeight =
+                      effectiveDurationMin * (hourHeight / 60.0);
                   final double topPos = startMin * (hourHeight / 60.0);
-                  final double cardHeight = clampedDuration * (hourHeight / 60.0);
+                  final double cardHeight = max(minActivityHeight, calculatedHeight);
 
                   final catColor = _getCategoryColor(act.category);
                   final isSelectedOnMap =
@@ -2427,7 +2433,7 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                                           ),
                                           if (act.location != null &&
                                               act.location!.isNotEmpty &&
-                                              cardHeight >= 45) ...[
+                                              cardHeight >= 54) ...[
                                             const SizedBox(height: 1),
                                             Text(
                                               act.location!,

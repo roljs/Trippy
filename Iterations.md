@@ -178,4 +178,106 @@ In Day Planner, implement the following features:
    - In `DayPlannerView`:
      - Added `_hoverDropStartMinutesNotifier` to dynamically broadcast hover drag positions without full widget rebuilds.
      - Updated `_buildActivityDragFeedback` to observe hover minutes and dynamically show `Target: HH:mm` badge with key `'drag_feedback_target_time'` and formatted time ranges.
-     - Enhanced timeline ghost card (`'timeline_ghost_card'`) with `'timeline_floating_target_time_badge'` displaying real-time target time alongside the 15-minute slot indicator.
+     - Enhanced timeline ghost card (`'timeline_ghost_card'`) with `'timeline_floating_target_time_badge'` displaying real-time target time alongside the 15-minute slot indicator.
+
+
+# Iteration #23
+1. [x] Across all UI, remove the text label from the badges that indicate if an activity was updated via MCP. The badge should just include the little robot icon. For activities last updated via the UI, no badge/icon should be shown. The absence of a badge should convey that the activity was updated/created by the user through the UI.
+   - In `lib/views/common/modification_source_badge.dart`:
+     - If `!isMcp` (i.e. updated via UI or source is unset), returns `SizedBox.shrink()` so no icon or badge is displayed.
+     - For MCP modifications, renders only the purple robot icon (`Icons.smart_toy_rounded`) within the rounded container with tooltip, omitting all text labels.
+   - Updated widget tests in `test/views/iteration_22_enhancements_test.dart`.
+2. [x] Update the Trippy MCP server to support adding links and attachments to all object types (`Stay`, `Activity`, `Flight`), plus support `ticketUrl` in `trippy_update_activity`:
+   - Updated tool schemas in `lib/mcp/trippy_mcp_models.dart`:
+     - `trippy_create_activity`: added `ticketUrl`, `links`, `attachments`.
+     - `trippy_update_activity`: added `ticketUrl`, `links`, `addLinks`, `attachments`, `addAttachments`.
+     - `trippy_create_stay`: added `links`, `attachments`.
+     - `trippy_update_stay`: added `links`, `addLinks`, `attachments`, `addAttachments`.
+     - `trippy_create_flight`: added `links`, `attachments`.
+     - `trippy_update_flight`: added `links`, `addLinks`, `attachments`, `addAttachments`.
+     - `trippy_apply_suggested_itinerary`: added `ticketUrl`, `confirmationRef`, `links`, `attachments` to items schema for activities, stays, and flights.
+   - Built flexible string & object parser (`_parseStringList`) in `lib/mcp/trippy_mcp_service.dart`:
+     - Supports `"Label|URL"` format.
+     - Supports raw URL strings.
+     - Supports structured JSON arrays: `[{"label": "Name", "url": "https://..."}]` or `[{"title": "Name", "url": "https://..."}]`.
+     - Supports both full replacement (`links`, `attachments`) and incremental appending (`addLinks`, `addAttachments`).
+   - Added unit test suite in `test/mcp/trippy_mcp_server_test.dart` verifying link, attachment, and `ticketUrl` handling across all object types.
+
+3. [x] Smart Deduplication & In-Place Update for `trippy_apply_suggested_itinerary`:
+   - Updated `_handleApplySuggestedItinerary` in `lib/mcp/trippy_mcp_service.dart` to match existing activities, stays, and flights before creating new ones.
+   - Matching heuristics:
+     - Exact ID match (`id` or `activityId` / `stayId` / `flightId`).
+     - Normalized alphanumeric title/name equality on the target date.
+     - Substring containment match on the target date (e.g. "Gonpachi Nishiazabu" vs "Dinner at Gonpachi Nishiazabu").
+     - Time + location overlap on the target date.
+   - In-place merge behavior:
+     - Preserves original database IDs and creation timestamps.
+     - Merges `links` and `attachments` using deduplicated sets without clobbering existing links.
+     - Merges notes cleanly without duplicate repetitions.
+     - Updates `bookingStatus`, `ticketUrl`, `confirmationRef`, `cost`, and times when provided.
+   - Returns separate counts in response: `activitiesCount`, `updatedActivitiesCount`, `createdActivitiesCount`.
+   - Cleaned up pre-existing duplicates on 2026-11-05 in production Firestore (`trip_thailandia_2026`).
+   - Added unit test in `test/mcp/trippy_mcp_server_test.dart` verifying that existing activities are updated in-place rather than duplicated.
+4. [x] Documented web and mobile client configuration instructions for the hosted Trippy MCP Server (`https://trippy-mcp-server-392329008088.us-central1.run.app/mcp`) in `README.md` and `README_MCP.md`:
+   - Added dedicated `## Model Context Protocol (MCP) Server` section to `README.md` with live Cloud Run endpoints (HTTP POST `/mcp`, SSE `/sse`, and health check `/health`).
+   - Documented step-by-step configuration for Web clients (Gemini Web, Google AI Studio, Gemini Live, ChatGPT Custom GPTs / Actions).
+   - Documented step-by-step configuration for Mobile clients (iOS and Android MCP apps like Chatbox Mobile, LibreChat Mobile, TypingMind, and voice/chat workflows on Gemini & ChatGPT mobile).
+   - Documented Desktop IDE settings (Claude Desktop, Antigravity IDE, Cursor) and authentication modes (sample in-memory sandbox vs live Cloud Firestore).
+
+# Iteration #24
+1. [x] Allow Trippy users to self-serve in generating PAT tokens for themselves via the Trippy app. This includes the ability to list and delete existing tokens. This should show up in an app-level settings page in the trippy app.
+   - **Settings & AI Tokens Screen (`lib/views/settings/settings_screen.dart`)**:
+     - Built comprehensive app-level Settings screen accessible from the AppBar (`Icons.settings_outlined`) and the User Account menu.
+     - Profile section displaying user avatar, name, email, account type, UID, and sign-in / sign-out controls.
+     - **Self-Serve Personal Access Token (PAT) Generator**:
+       - Cryptographically secure 192-bit random token generation using `Random.secure()` formatted with `trippy_pat_<hex>`.
+       - Computes SHA-256 hash client-side and stores metadata securely in Firestore collection `/mcp_api_keys/{keyHash}`:
+         - `userId`: User's Firebase UID
+         - `email`: User's email
+         - `description`: Custom label (e.g., "Grok Bot Assistant", "Claude Desktop")
+         - `tokenPrefix`: First 16 characters for identification in UI (raw token is never stored)
+         - `createdAt`: ISO 8601 timestamp
+       - One-time reveal modal with one-click copy buttons for:
+         - Raw PAT secret (`trippy_pat_...`)
+         - HTTP POST endpoint URL (`https://trippy-mcp-server-...run.app/mcp?key=...`)
+         - SSE endpoint URL (`https://trippy-mcp-server-...run.app/sse?key=...`)
+     - **Active Token Management**:
+       - Real-time Firestore stream of active tokens owned by the signed-in user.
+       - Token list with description, prefix, creation date, and instant revoke/delete action with confirmation modal.
+     - **AI Assistant Setup Quick Guide**:
+       - Interactive expandable cards with instructions for Grok Bot on X, Google AI Studio / Gemini, and Claude Desktop.
+   - **Firestore Security Rules**:
+     - Added rule `match /mcp_api_keys/{keyHash}` permitting authenticated users to read, create, and delete strictly their own tokens (`resource.data.userId == request.auth.uid`). Deployed to production.
+
+2. [x] Fix UI issue in Day Planner: When there is an activity that lasts 15mins or less, its height is too small to be visible. Enforce a minimum height for activities in the Day Planner, regardless of the duration of the activity. Also, ensure that activities that start exactly at the hour are exactly aligned with the hour's horizontal line. Currently, some activities that start at the hour, show slightly above the corresponding hours' line. Same applies for the activities bottom edge, doesn't exactly aligns with the hour lines.
+   - In `lib/views/day_planner/day_planner_view.dart`:
+     - **Exact Hourly Grid Line Alignment**:
+       - Separated time label rendering from horizontal grid line rendering.
+       - Horizontal 1px dividing lines are now positioned at exact pixel offsets `top: h * hourHeight, height: 1.0` spanning `left: 52, right: 0` for all 24 hours.
+       - Time labels are centered at `top: h * hourHeight - 7.0, height: 14.0`, preventing Flutter's Row layout from pushing the line down by 7dp.
+       - Activities starting at the hour (`topPos = startMinutes * (hourHeight / 60)`) align with the horizontal hour line down to the exact pixel; activities ending on the hour align with the bottom line.
+     - **Minimum Activity Height Enforcement**:
+       - Defined `minActivityHeight = 48.0 dp` across all timeline activity cards.
+       - Calculated card height is clamped: `cardHeight = math.max(minActivityHeight, durationMinutes * (hourHeight / 60))`.
+       - Activities $\le 15$ minutes (which previously rendered at only 18dp) now display at a legible 48dp height with visible titles, category icons, time badges, and drag handles without visual clipping.
+       - Location sub-line visibility threshold adjusted to `cardHeight >= 54`.
+       - Drag feedback ghost cards also enforce `max(48.0, ...)` minimum height for consistent drag-and-drop feedback.
+
+3. [x] Enable adding notes, links and attachments at the trip level:
+   - **Data Model & Firestore (`lib/models/trip.dart`)**:
+     - Added `notes` (`String?`), `links` (`List<String>`), and `attachments` (`List<String>`) to `Trip` model.
+     - Updated `copyWith`, `toMap`, and `fromMap` with full backward compatibility for legacy trips without notes.
+     - Updated `firestore.rules` validation schema (`isValidTrip`) to allow `notes`, `links`, and `attachments`.
+   - **MCP Server Trip Tools (`lib/mcp/trippy_mcp_models.dart`, `lib/mcp/trippy_mcp_service.dart`)**:
+     - Extended `trippy_create_trip` tool schema with `notes`, `links`, and `attachments`.
+     - Extended `trippy_update_trip` tool schema with `notes`, `links`, `addLinks`, `attachments`, and `addAttachments`.
+     - Updated handlers to parse string lists, label-URL pairs, and JSON objects, saving directly to Firestore in authenticated mode.
+   - **Trippy UI Integration**:
+     - **Trip Creation (`_CreateTripDialog` in `lib/views/dashboard/trip_dashboard_screen.dart`)**:
+       - Integrated `NotesAndAttachmentsSection` into the create trip workflow.
+     - **Trip Editing (`EditTripDialog`)**:
+       - Created reusable public `EditTripDialog` with title, destination, start/end locations, date range picker, and full `NotesAndAttachmentsSection`.
+       - Added edit button (`Icons.edit_note_rounded`) to each trip card on the Trips dashboard.
+       - Added trip summary badges (Notes indicator, link count badge, attachment file count badge) on each trip card.
+     - **Active Trip Quick Access (`lib/views/common/app_nav_scaffold.dart`)**:
+       - Added Trip Notes button (`Icons.description_outlined` with badge indicator) in the AppBar across all views when an active trip is selected, allowing instant viewing and editing of trip-level notes, links, and attachments without having to leave the current tab.

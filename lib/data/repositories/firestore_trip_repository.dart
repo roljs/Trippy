@@ -132,32 +132,122 @@ class FirestoreTripRepository implements TripRepository {
   Stream<List<Trip>> watchTripsForUser(String userId) {
     if (userId.isEmpty) return Stream.value(const <Trip>[]);
 
-    final query = _tripsCollection.where(
+    final memberQuery = _tripsCollection.where(
       'memberIds',
       arrayContains: userId,
     );
+    final ownerQuery = _tripsCollection.where(
+      'ownerId',
+      isEqualTo: userId,
+    );
 
-    return query.snapshots().map((snapshot) {
-      final trips = snapshot.docs
+    late final StreamController<List<Trip>> controller;
+    Map<String, DocumentSnapshot<Map<String, dynamic>>> memberDocs = {};
+    Map<String, DocumentSnapshot<Map<String, dynamic>>> ownerDocs = {};
+    StreamSubscription? memberSub;
+    StreamSubscription? ownerSub;
+
+    void emitMerged() {
+      final allDocs = <String, DocumentSnapshot<Map<String, dynamic>>>{
+        ...memberDocs,
+        ...ownerDocs,
+      };
+
+      // Auto-heal if an owned trip is missing memberIds
+      for (final doc in ownerDocs.values) {
+        final data = doc.data();
+        if (data != null) {
+          final mIds = data['memberIds'];
+          if (mIds is! List || !mIds.contains(userId)) {
+            final membersMap = data['members'] is Map
+                ? (data['members'] as Map).keys.cast<String>()
+                : <String>[];
+            final healed = <String>{userId, ...membersMap}.toList();
+            doc.reference.update({'memberIds': healed}).ignore();
+          }
+        }
+      }
+
+      final trips = allDocs.values
           .map((doc) => _tripFromSnapshot(doc))
           .whereType<Trip>()
           .toList();
       trips.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-      return trips;
-    });
+      if (!controller.isClosed) {
+        controller.add(trips);
+      }
+    }
+
+    controller = StreamController<List<Trip>>(
+      onListen: () {
+        memberSub = memberQuery.snapshots().listen(
+          (snap) {
+            memberDocs = {for (final d in snap.docs) d.id: d};
+            emitMerged();
+          },
+          onError: (err, stack) {
+            if (!controller.isClosed) controller.addError(err, stack);
+          },
+        );
+
+        ownerSub = ownerQuery.snapshots().listen(
+          (snap) {
+            ownerDocs = {for (final d in snap.docs) d.id: d};
+            emitMerged();
+          },
+          onError: (err, stack) {
+            // Non-fatal if index or permission edge case
+            emitMerged();
+          },
+        );
+      },
+      onCancel: () {
+        memberSub?.cancel();
+        ownerSub?.cancel();
+      },
+    );
+
+    return controller.stream;
   }
 
   @override
   Future<List<Trip>> getTripsForUser(String userId) async {
     if (userId.isEmpty) return const <Trip>[];
 
-    final query = _tripsCollection.where(
+    final memberQuery = _tripsCollection.where(
       'memberIds',
       arrayContains: userId,
     );
+    final ownerQuery = _tripsCollection.where(
+      'ownerId',
+      isEqualTo: userId,
+    );
 
-    final snapshot = await query.get();
-    final trips = snapshot.docs
+    final results = await Future.wait([
+      memberQuery.get(),
+      ownerQuery.get().catchError((_) => memberQuery.limit(0).get()),
+    ]);
+
+    final allDocs = <String, DocumentSnapshot<Map<String, dynamic>>>{};
+    for (final snap in results) {
+      for (final doc in snap.docs) {
+        allDocs[doc.id] = doc;
+        // Auto-heal missing memberIds for owned trips
+        final data = doc.data();
+        if (data['ownerId'] == userId) {
+          final mIds = data['memberIds'];
+          if (mIds is! List || !mIds.contains(userId)) {
+            final membersMap = data['members'] is Map
+                ? (data['members'] as Map).keys.cast<String>()
+                : <String>[];
+            final healed = <String>{userId, ...membersMap}.toList();
+            doc.reference.update({'memberIds': healed}).ignore();
+          }
+        }
+      }
+    }
+
+    final trips = allDocs.values
         .map((doc) => _tripFromSnapshot(doc))
         .whereType<Trip>()
         .toList();

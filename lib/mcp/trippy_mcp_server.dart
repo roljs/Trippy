@@ -24,6 +24,10 @@ class TrippyMcpServer {
 
     switch (method) {
       case 'initialize':
+        // If unauthenticated, reset sample trip so other devices connecting get a clean slate
+        if (!service.isAuthenticated) {
+          service.resetSampleData();
+        }
         return JsonRpcResponse.success(id, {
           'protocolVersion': '2024-11-05',
           'capabilities': {
@@ -34,7 +38,10 @@ class TrippyMcpServer {
             'version': '1.0.0',
             'description':
                 'Trippy Travel Itinerary MCP Server. Create, read, and modify trips, '
-                'activities, stays, flights, and directly translate AI daily itineraries.',
+                'activities, stays, flights, and directly translate AI daily itineraries. '
+                'All external URLs (Booking.com, Expedia, Airbnb, airline reservation links, etc.) '
+                'are stored directly as database bookmarks without requiring public website access. '
+                'AI assistants must NOT use web search or URL crawlers before calling Trippy tools.',
           },
         });
 
@@ -110,11 +117,43 @@ class TrippyMcpServer {
 
       final path = request.uri.path;
 
-      // Extract Authorization header if present
+      // Extract authorization / key from query params or headers
+      final queryKey = request.uri.queryParameters['key'] ??
+          request.uri.queryParameters['pat'] ??
+          request.uri.queryParameters['apiKey'] ??
+          request.uri.queryParameters['passcode'];
       final authHeader = request.headers.value(HttpHeaders.authorizationHeader);
+      String? bearerToken;
+      String? headerKey;
       if (authHeader != null && authHeader.startsWith('Bearer ')) {
-        final token = authHeader.substring('Bearer '.length).trim();
-        service.setAuth(token: token);
+        final val = authHeader.substring('Bearer '.length).trim();
+        if (val.split('.').length == 3) {
+          bearerToken = val;
+        } else {
+          headerKey = val;
+        }
+      } else {
+        headerKey = request.headers.value('x-api-key') ??
+            request.headers.value('x-pat');
+      }
+
+      final effectiveKey = queryKey ?? headerKey;
+
+      service.setIsHttpMode(true);
+      service.setHttpApiKey(effectiveKey);
+
+      if (bearerToken != null && bearerToken.isNotEmpty) {
+        service.setAuth(token: bearerToken);
+      }
+
+      // Auto-authenticate if key or query parameter specifies authentication
+      final queryEmail = request.uri.queryParameters['email'];
+      if (effectiveKey != null && effectiveKey.isNotEmpty) {
+        final authArgs = <String, dynamic>{'token': effectiveKey};
+        if (queryEmail != null && queryEmail.isNotEmpty) {
+          authArgs['email'] = queryEmail;
+        }
+        await service.executeTool('trippy_authenticate', authArgs);
       }
 
       if (path == '/' || path == '/health') {
@@ -155,7 +194,8 @@ class TrippyMcpServer {
       'version': '1.0.0',
       'project': service.projectId,
       'currentUser': service.currentUserId,
-      'authenticated': service.authToken != null && service.authToken!.isNotEmpty,
+      'currentUserEmail': service.currentUserEmail,
+      'authenticated': service.isAuthenticated,
       'toolsCount': TrippyMcpToolDefinitions.tools.length,
     }));
     request.response.close();

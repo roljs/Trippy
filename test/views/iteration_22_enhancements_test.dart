@@ -113,7 +113,7 @@ void main() {
       expect(saved2.isModifiedByMcp, isTrue);
     });
 
-    testWidgets('ModificationSourceBadge displays MCP styling when source is mcp', (tester) async {
+    testWidgets('ModificationSourceBadge displays robot icon and no text when source is mcp', (tester) async {
       final now = DateTime.now();
       await tester.pumpWidget(
         MaterialApp(
@@ -127,11 +127,12 @@ void main() {
       );
 
       expect(find.byKey(const ValueKey('modification_badge_mcp')), findsOneWidget);
-      expect(find.textContaining('MCP Server'), findsOneWidget);
       expect(find.byIcon(Icons.smart_toy_rounded), findsOneWidget);
+      // No text label should be shown
+      expect(find.byType(Text), findsNothing);
     });
 
-    testWidgets('ModificationSourceBadge displays UI styling when source is ui', (tester) async {
+    testWidgets('ModificationSourceBadge renders nothing when source is ui or null', (tester) async {
       final now = DateTime.now();
       await tester.pumpWidget(
         MaterialApp(
@@ -145,9 +146,10 @@ void main() {
         ),
       );
 
-      expect(find.byKey(const ValueKey('modification_badge_ui')), findsOneWidget);
-      expect(find.textContaining('UI'), findsOneWidget);
-      expect(find.byIcon(Icons.edit_note_rounded), findsOneWidget);
+      expect(find.byKey(const ValueKey('modification_badge_mcp')), findsNothing);
+      expect(find.byKey(const ValueKey('modification_badge_ui')), findsNothing);
+      expect(find.byIcon(Icons.edit_note_rounded), findsNothing);
+      expect(find.byIcon(Icons.smart_toy_rounded), findsNothing);
     });
   });
 
