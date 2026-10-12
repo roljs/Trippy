@@ -13,6 +13,7 @@ import '../stays/stays_view.dart';
 import 'add_activity_sheet.dart';
 import 'add_flight_sheet.dart';
 import 'add_stay_sheet.dart';
+import 'offline_sync_dialog.dart';
 import 'user_account_button.dart';
 
 class AppNavScaffold extends ConsumerStatefulWidget {
@@ -223,6 +224,14 @@ class _AppNavScaffoldState extends ConsumerState<AppNavScaffold> {
               ),
               actions: [
                 if (activeTrip != null) ...[
+                  // Offline Travel Mode button
+                  IconButton(
+                    icon: const Icon(Icons.cloud_sync_outlined),
+                    tooltip: 'Offline Travel Mode',
+                    onPressed: () {
+                      OfflineSyncDialog.show(context, trip: activeTrip);
+                    },
+                  ),
                   // Trip-level Notes, Links & Attachments button
                   IconButton(
                     icon: Badge(

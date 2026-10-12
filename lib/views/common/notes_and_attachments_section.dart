@@ -747,6 +747,7 @@ class _NotesAndAttachmentsSectionState
                           onTap: AttachmentUploadHelper.isUrl(widget.attachments[i])
                               ? () => AttachmentUploadHelper.openAttachment(
                                     widget.attachments[i],
+                                    context,
                                   )
                               : () => _showEditAttachmentDialog(i),
                           child: Text(

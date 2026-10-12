@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_colors.dart';
+import '../../services/offline/attachment_cache_service.dart';
 import '../../state/trip_providers.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -474,7 +475,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           _buildAssistantGuideCard(context),
           const SizedBox(height: 24),
 
-          // Section 4: App Info
+          // Section 4: Offline Storage & Attachment Cache
+          _buildOfflineStorageCard(context),
+          const SizedBox(height: 24),
+
+          // Section 5: App Info
           _buildAppInfoCard(),
           const SizedBox(height: 32),
         ],
@@ -902,6 +907,122 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 '   "trippy": { "url": "https://trippy-mcp-server-392329008088.us-central1.run.app/sse?key=<your_token>" }',
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildOfflineStorageCard(BuildContext context) {
+    return Card(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.offline_pin_rounded,
+                      color: AppColors.success, size: 22),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Offline Travel Storage',
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                      ),
+                      Text(
+                        'Manage cached trips, stays, flights, and files',
+                        style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.folder_zip_outlined,
+                      size: 20, color: AppColors.primary),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Trip data and files are automatically cached locally when viewed or downloaded.',
+                      style: TextStyle(fontSize: 12, height: 1.3),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red.shade700,
+                  ),
+                  onPressed: () async {
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Clear Offline Storage?'),
+                        content: const Text(
+                          'This will clear all locally cached attachment files. '
+                          'Your trips will remain safely stored in the cloud.',
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.of(ctx).pop(false),
+                            child: const Text('Cancel'),
+                          ),
+                          FilledButton(
+                            onPressed: () => Navigator.of(ctx).pop(true),
+                            style: FilledButton.styleFrom(
+                                backgroundColor: Colors.red),
+                            child: const Text('Clear All'),
+                          ),
+                        ],
+                      ),
+                    );
+
+                    if (confirm == true) {
+                      await AttachmentCacheService().clearAll();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Offline attachment cache cleared.'),
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  icon: const Icon(Icons.delete_outline_rounded, size: 16),
+                  label: const Text('Clear File Cache'),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -1,7 +1,10 @@
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:pasteboard/pasteboard.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../services/offline/attachment_cache_service.dart';
+import '../../views/common/attachment_preview_dialog.dart';
 import 'attachment_picker/attachment_picker.dart';
 
 /// Helper to pick files, paste images from the clipboard, and upload them
@@ -86,6 +89,13 @@ class AttachmentUploadHelper {
       final metadata = SettableMetadata(contentType: contentType);
       final uploadTask = await ref.putData(bytes, metadata);
       final downloadUrl = await uploadTask.ref.getDownloadURL();
+
+      // Immediately cache bytes locally for zero-latency offline access
+      try {
+        final cache = AttachmentCacheService();
+        await cache.cacheBytesDirectly(downloadUrl, bytes, fileName: fileName);
+      } catch (_) {}
+
       return downloadUrl;
     } catch (e) {
       debugPrint('Firebase Storage upload failed: $e, using fileName fallback');
@@ -168,10 +178,33 @@ class AttachmentUploadHelper {
     return target.startsWith('http://') || target.startsWith('https://');
   }
 
-  /// Opens an attachment or link if it is a URL.
-  static Future<bool> openAttachment(String raw) async {
+  /// Opens an attachment or link if it is a URL, optionally showing the in-app preview dialog.
+  static Future<bool> openAttachment(String raw, [BuildContext? context]) async {
     final target = extractUrlOrPath(raw);
     if (!isUrl(target)) return false;
+
+    // 1. If context is provided, open the rich interactive preview dialog with zoom & offline support
+    if (context != null && context.mounted) {
+      await AttachmentPreviewDialog.show(
+        context,
+        rawAttachment: raw,
+      );
+      return true;
+    }
+
+    // 2. Check if a local cached file exists on disk (native platforms)
+    try {
+      final cache = AttachmentCacheService();
+      final localPath = await cache.getCachedFilePath(target);
+      if (localPath != null && !kIsWeb) {
+        final uri = Uri.file(localPath);
+        if (await canLaunchUrl(uri)) {
+          return await launchUrl(uri);
+        }
+      }
+    } catch (_) {}
+
+    // 3. Fallback to launching external URL
     try {
       final uri = Uri.parse(target);
       if (await canLaunchUrl(uri)) {

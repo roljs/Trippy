@@ -281,3 +281,43 @@ In Day Planner, implement the following features:
        - Added trip summary badges (Notes indicator, link count badge, attachment file count badge) on each trip card.
      - **Active Trip Quick Access (`lib/views/common/app_nav_scaffold.dart`)**:
        - Added Trip Notes button (`Icons.description_outlined` with badge indicator) in the AppBar across all views when an active trip is selected, allowing instant viewing and editing of trip-level notes, links, and attachments without having to leave the current tab.
+
+# Iteration #25
+1. [x] Full Offline Travel Support (Eager Caching & Local Attachment Storage):
+   - **Firestore Local Persistence Configuration (`lib/main.dart`)**:
+     - Configured Firestore settings on app initialization: `FirebaseFirestore.instance.settings = const Settings(persistenceEnabled: true, cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED)`.
+     - Ensures that all read documents across trips, stays, flights, and activities are automatically persisted in the local SQLite/IndexedDB offline cache engine.
+   - **Platform-Agnostic Attachment Storage Layer (`lib/services/offline/attachment_storage/`)**:
+     - `AttachmentStorage` abstract platform interface with runtime and test overrides.
+     - `AttachmentStorageIo`: On mobile (iOS, Android) and desktop (Windows, macOS, Linux), stores attachment files locally in `trippy_attachments_cache/` using `path_provider` with seamless fallback for tests and constrained environments.
+     - `AttachmentStorageWeb`: In-memory byte cache for Web environments where direct filesystem access is restricted.
+   - **Attachment Cache Service (`lib/services/offline/attachment_cache_service.dart`)**:
+     - Computes SHA-256 hash keys for consistent, filesystem-safe local caching of URLs.
+     - Performs automatic file extension and MIME type detection (`.pdf`, `.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`).
+     - Eager local byte saving upon attachment upload via `AttachmentUploadHelper`.
+     - Direct offline retrieval of raw bytes (`getCachedBytes`) or local file paths (`getCachedFilePath`).
+     - Storage size tracking and cache wipe capabilities.
+   - **Offline Sync Coordinator (`lib/services/offline/offline_sync_service.dart`)**:
+     - `TripOfflineStatus` data model tracking cached counts for stays, flights, activities, total/cached attachments, and disk usage.
+     - `prefetchTripForOffline(tripId)`: Eagerly downloads and warms Firestore cache for trip root, stays, flights, and daily activities, while sequentially downloading and caching all external attachments with granular progress reporting callbacks (`0% -> 100%`).
+     - `checkTripStatus(tripId)`: Evaluates offline readiness and detects missing attachments.
+     - `removeTripOfflineCache(tripId)`: Wipes a trip's attachments from disk when storage needs to be reclaimed.
+     - Riverpod providers: `offlineSyncServiceProvider`, `syncingTripsProvider`, `isTripSyncingProvider`, `tripOfflineStatusProvider`, `activeTripOfflineStatusProvider`.
+   - **In-App Attachment Preview Dialog (`lib/views/common/attachment_preview_dialog.dart`)**:
+     - Full-featured in-app modal preview dialog supporting offline viewing.
+     - Zoomable and pannable image viewer (`InteractiveViewer`) directly loading from cached offline bytes.
+     - Dedicated PDF and document preview cards indicating local cache availability vs Cloud Storage.
+     - Open local file action on Desktop/Mobile (`Process.run` / `OpenFilex`) and external fallback launch via `url_launcher`.
+     - Offline status indicators (e.g., "Stored in local offline cache", "Make Available Offline").
+   - **UI Integration & Offline Travel Mode Controls**:
+     - **App Navigation Scaffold (`lib/views/common/app_nav_scaffold.dart`)**:
+       - Added Offline Travel Mode action button (`Icons.cloud_sync_outlined`) in the top AppBar when an active trip is selected, showing a green check badge when fully cached offline.
+     - **Trip Dashboard (`lib/views/dashboard/trip_dashboard_screen.dart`)**:
+       - Added "Offline Ready" green badge on trip cards when all details and attachments are cached locally.
+       - Added "Offline Sync" icon button on each trip card's action row for 1-tap download and status inspection.
+     - **Offline Sync Dialog (`lib/views/common/offline_sync_dialog.dart`)**:
+       - Modern status modal showing detailed breakdown (Stays & Lodgings, Flights & Transportation, Daily Activities, Files & Attachments), live sync progress bar, "Make Available Offline" / "Update Offline Cache" button, and "Clear Cache" button.
+     - **Settings Screen (`lib/views/settings/settings_screen.dart`)**:
+       - Added "Offline Travel Storage" management card with dynamic cached size display and a "Clear File Cache" button.
+     - **Notes & Attachments Chips (`lib/views/common/notes_and_attachments_section.dart`)**:
+       - Attachment chips open `AttachmentPreviewDialog` on tap for instantaneous in-app offline preview.

@@ -11,9 +11,11 @@ import '../../state/trip_providers.dart';
 import '../../data/samples/thailandia_sample_trip.dart';
 import '../../data/repositories/firestore_trip_repository.dart';
 import '../common/notes_and_attachments_section.dart';
+import '../common/offline_sync_dialog.dart';
 import '../common/user_account_button.dart';
 import '../logistics/widgets/transport_header_bridge_widget.dart';
 import '../settings/settings_screen.dart';
+import '../../services/offline/offline_sync_service.dart';
 
 class TripDashboardScreen extends ConsumerWidget {
   final VoidCallback? onTripSelected;
@@ -545,6 +547,45 @@ class TripDashboardScreen extends ConsumerWidget {
                                     ],
                                   ),
                                 ),
+                              Consumer(
+                                builder: (context, ref, _) {
+                                  final offlineStatus = ref.watch(tripOfflineStatusProvider(trip.id));
+                                  return offlineStatus.when(
+                                    data: (status) {
+                                      if (!status.isDownloaded) return const SizedBox.shrink();
+                                      return Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.success.withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(
+                                              color: AppColors.success.withValues(alpha: 0.3),
+                                              width: 0.8),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(Icons.cloud_done_rounded,
+                                                size: 13, color: AppColors.success),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              'Offline Ready',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: Colors.green.shade800,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                    loading: () => const SizedBox.shrink(),
+                                    error: (_, _) => const SizedBox.shrink(),
+                                  );
+                                },
+                              ),
                             ],
                           ),
                         ],
@@ -594,6 +635,12 @@ class TripDashboardScreen extends ConsumerWidget {
                                 onPressed: () =>
                                     _showEditTripModal(context, ref, trip),
                               ),
+                            IconButton(
+                              icon: const Icon(Icons.cloud_sync_outlined, size: 20),
+                              tooltip: 'Offline Travel Mode',
+                              onPressed: () =>
+                                  OfflineSyncDialog.show(context, trip: trip),
+                            ),
                             IconButton(
                               icon: const Icon(Icons.share_rounded, size: 20),
                               tooltip: 'Share & Invite Co-Travelers',

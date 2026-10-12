@@ -32,6 +32,7 @@ class AppColors {
   static const Color planned = Color(0xFF64748B);
   static const Color booked = Color(0xFF2563EB);
   static const Color ticketed = Color(0xFF16A34A);
+  static const Color success = Color(0xFF16A34A);
 
   // Neutral
   static const Color textPrimary = Color(0xFF0F172A);
