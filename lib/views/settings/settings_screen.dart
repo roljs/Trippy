@@ -20,6 +20,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   static const String _defaultServerBaseUrl =
       'https://trippy-mcp-server-392329008088.us-central1.run.app';
 
+  FirebaseFirestore? get _firestore {
+    try {
+      return FirebaseFirestore.instance;
+    } catch (_) {
+      return null;
+    }
+  }
+
   String _hashPat(String rawToken) {
     return sha256.convert(utf8.encode(rawToken.trim())).toString();
   }
@@ -585,37 +593,34 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ],
             ),
             const SizedBox(height: 14),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                if (user == null || user.isAnonymous == true)
-                  FilledButton.icon(
-                    onPressed: () async {
-                      try {
-                        await ref.read(authServiceProvider).signInWithGoogle();
-                      } catch (e) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Sign-in failed: $e')),
-                          );
+            Align(
+              alignment: Alignment.centerRight,
+              child: (user == null || user.isAnonymous == true)
+                  ? FilledButton.icon(
+                      onPressed: () async {
+                        try {
+                          await ref.read(authServiceProvider).signInWithGoogle();
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Sign-in failed: $e')),
+                            );
+                          }
                         }
-                      }
-                    },
-                    icon: const Icon(Icons.login, size: 16),
-                    label: Text(user?.isAnonymous == true
-                        ? 'Upgrade with Google'
-                        : 'Sign In with Google'),
-                  )
-                else
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(foregroundColor: Colors.red.shade700),
-                    onPressed: () async {
-                      await ref.read(authServiceProvider).signOut();
-                    },
-                    icon: const Icon(Icons.logout, size: 16),
-                    label: const Text('Sign Out'),
-                  ),
-              ],
+                      },
+                      icon: const Icon(Icons.login, size: 16),
+                      label: Text(user?.isAnonymous == true
+                          ? 'Upgrade with Google'
+                          : 'Sign In with Google'),
+                    )
+                  : OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(foregroundColor: Colors.red.shade700),
+                      onPressed: () async {
+                        await ref.read(authServiceProvider).signOut();
+                      },
+                      icon: const Icon(Icons.logout, size: 16),
+                      label: const Text('Sign Out'),
+                    ),
             ),
           ],
         ),
@@ -625,6 +630,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Widget _buildPatSection(BuildContext context, dynamic user) {
     final isGuest = user == null || user.isAnonymous == true;
+    final isMobile = MediaQuery.sizeOf(context).width < 600;
 
     return Card(
       shape: RoundedRectangleBorder(
@@ -636,40 +642,82 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryContainer.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(10),
+            if (isMobile) ...[
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryContainer.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.smart_toy_rounded, color: AppColors.primary, size: 22),
                   ),
-                  child: const Icon(Icons.smart_toy_rounded, color: AppColors.primary, size: 22),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Personal Access Tokens (AI Assistants)',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-                      ),
-                      Text(
-                        'Model Context Protocol (MCP) integrations',
-                        style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                      ),
-                    ],
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Personal Access Tokens (AI Assistants)',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                        ),
+                        Text(
+                          'Model Context Protocol (MCP) integrations',
+                          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                if (!isGuest)
-                  FilledButton.icon(
+                ],
+              ),
+              if (!isGuest) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
                     onPressed: () => _showCreateTokenDialog(context, user.uid, user.email),
                     icon: const Icon(Icons.add_rounded, size: 16),
                     label: const Text('Generate Token'),
                   ),
+                ),
               ],
-            ),
+            ] else ...[
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryContainer.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.smart_toy_rounded, color: AppColors.primary, size: 22),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Personal Access Tokens (AI Assistants)',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                        ),
+                        Text(
+                          'Model Context Protocol (MCP) integrations',
+                          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (!isGuest)
+                    FilledButton.icon(
+                      onPressed: () => _showCreateTokenDialog(context, user.uid, user.email),
+                      icon: const Icon(Icons.add_rounded, size: 16),
+                      label: const Text('Generate Token'),
+                    ),
+                ],
+              ),
+            ],
             const SizedBox(height: 12),
             const Text(
               'Personal Access Tokens allow AI chatbots (such as Grok Bot, Gemini, ChatGPT Actions, and Claude Desktop) '
@@ -699,10 +747,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ],
                 ),
               ),
-            ] else ...[
+            ] else if (_firestore != null) ...[
               // Live Stream of MCP Tokens from Firestore
               StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: FirebaseFirestore.instance
+                stream: _firestore!
                     .collection('mcp_api_keys')
                     .where('userId', isEqualTo: user.uid)
                     .snapshots(),

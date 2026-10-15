@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/date_formatters.dart';
+import '../../core/utils/city_color_helper.dart';
+import '../../core/utils/location_inference_helper.dart';
 import '../../core/utils/map_launcher_helper.dart';
 import '../../models/models.dart';
 import '../../state/trip_providers.dart';
@@ -277,6 +279,7 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
       }
     }
 
+    final isMobile = MediaQuery.sizeOf(context).width < 600;
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final effectiveBottomPadding = bottomInset + 16;
 
@@ -301,31 +304,55 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      isEditing ? 'Edit Activity' : 'Add Activity',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isEditing ? 'Edit Activity' : 'Add Activity',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
                       ),
-                    ),
-                    if (isEditing &&
-                        (widget.activityToEdit!.lastModifiedAt != null ||
-                            widget.activityToEdit!.lastModifiedSource != null)) ...[
-                      const SizedBox(height: 4),
-                      ModificationSourceBadge(
-                        lastModifiedAt: widget.activityToEdit!.lastModifiedAt,
-                        lastModifiedSource: widget.activityToEdit!.lastModifiedSource,
-                      ),
+                      if (isEditing &&
+                          (widget.activityToEdit!.lastModifiedAt != null ||
+                              widget.activityToEdit!.lastModifiedSource != null)) ...[
+                        const SizedBox(height: 4),
+                        ModificationSourceBadge(
+                          lastModifiedAt: widget.activityToEdit!.lastModifiedAt,
+                          lastModifiedSource: widget.activityToEdit!.lastModifiedSource,
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.pop(context),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (isEditing && widget.activityToEdit != null)
+                      IconButton(
+                        key: const ValueKey('navigate_to_day_planner_button'),
+                        icon: const Icon(Icons.open_in_new_rounded, size: 20),
+                        tooltip: 'View in Day Planner',
+                        onPressed: () {
+                          final act = widget.activityToEdit!;
+                          final parts = act.startTime.split(':');
+                          final h = int.tryParse(parts[0]) ?? 0;
+                          final m = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
+                          final startMinute = h * 60 + m;
+                          ref.read(focusedTripDateProvider.notifier).setDate(act.date);
+                          ref.read(dayPlannerScrollTargetMinuteProvider.notifier).setMinute(startMinute);
+                          ref.read(navTabIndexProvider.notifier).setTab(0);
+                          Navigator.pop(context);
+                        },
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -342,33 +369,71 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
             ),
             const SizedBox(height: 14),
 
-            // Category Chips
+            // Category Chips or Single Dropdown on Mobile
             const Text(
               'Category',
               style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: ActivityCategory.values.map((cat) {
-                return ChoiceChip(
-                  label: Text(cat.displayName),
-                  selected: _category == cat,
-                  onSelected: (val) {
-                    if (val) {
-                      setState(() {
-                        _category = cat;
-                        if (cat == ActivityCategory.stay && _selectedStayId == null && availableStays.isNotEmpty) {
-                          _selectedStayId = availableStays.first.id;
-                          _applyStayCheckIn(availableStays.first);
-                        }
-                      });
-                    }
-                  },
-                );
-              }).toList(),
-            ),
+            if (isMobile)
+              DropdownButtonFormField<ActivityCategory>(
+                key: ValueKey('activity_category_dropdown_$_category'),
+                initialValue: _category,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  filled: true,
+                  fillColor: Colors.grey.shade50,
+                ),
+                items: ActivityCategory.values.map((cat) {
+                  return DropdownMenuItem<ActivityCategory>(
+                    value: cat,
+                    child: Text(cat.displayName),
+                  );
+                }).toList(),
+                onChanged: (cat) {
+                  if (cat != null) {
+                    setState(() {
+                      _category = cat;
+                      if (cat == ActivityCategory.stay &&
+                          _selectedStayId == null &&
+                          availableStays.isNotEmpty) {
+                        _selectedStayId = availableStays.first.id;
+                        _applyStayCheckIn(availableStays.first);
+                      }
+                    });
+                  }
+                },
+              )
+            else
+              Wrap(
+                key: const ValueKey('activity_category_chips'),
+                spacing: 8,
+                runSpacing: 8,
+                children: ActivityCategory.values.map((cat) {
+                  return ChoiceChip(
+                    label: Text(cat.displayName),
+                    selected: _category == cat,
+                    onSelected: (val) {
+                      if (val) {
+                        setState(() {
+                          _category = cat;
+                          if (cat == ActivityCategory.stay &&
+                              _selectedStayId == null &&
+                              availableStays.isNotEmpty) {
+                            _selectedStayId = availableStays.first.id;
+                            _applyStayCheckIn(availableStays.first);
+                          }
+                        });
+                      }
+                    },
+                  );
+                }).toList(),
+              ),
             const SizedBox(height: 14),
 
             // Meal Tag Section (Especially for Food & Dining)
@@ -1225,6 +1290,137 @@ class _AddActivitySheetState extends ConsumerState<AddActivitySheet> {
                             await repo.updateStay(oldSty.copyWith(
                               linkedActivityIds: oldSty.linkedActivityIds.where((id) => id != activity.id).toList(),
                             ));
+                          }
+                        }
+
+                        // Iteration 26: Do not automatically add new places to the day.
+                        // If activity is added via the UI, only if the activity happens in a new place/city,
+                        // suggest adding the place to the Day, but allow the user to reject.
+                        final candidateLocation = _category == ActivityCategory.transport
+                            ? (toLoc.isNotEmpty ? toLoc : fromLoc)
+                            : _locationController.text.trim();
+
+                        if (candidateLocation.isNotEmpty) {
+                          final stays = availableStays;
+                          final flights = availableFlights;
+                          final defaultCountry = LocationInferenceHelper.inferTargetCountryForDay(
+                            date: _selectedDate,
+                            flights: flights,
+                            activities: [],
+                            tripDestination: activeTrip.destination,
+                          );
+                          final candidateCity = LocationInferenceHelper.extractCityCandidate(
+                            candidateLocation,
+                            defaultCountry: defaultCountry,
+                            trip: activeTrip,
+                            stays: stays,
+                            flights: flights,
+                          );
+
+                          if (candidateCity != null && candidateCity.trim().isNotEmpty) {
+                            final dateKey = Trip.dateToKey(_selectedDate);
+                            final existingLocations = activeTrip.dayLocations[dateKey] ?? [];
+                            final candLower = candidateCity.trim().toLowerCase();
+
+                            final alreadyPresent = existingLocations.any((loc) =>
+                                loc.trim().toLowerCase() == candLower ||
+                                loc.trim().toLowerCase().contains(candLower) ||
+                                candLower.contains(loc.trim().toLowerCase()));
+
+                            final isDefaultCountry =
+                                candLower == defaultCountry.trim().toLowerCase();
+
+                            final activeStaysForDate = stays.where((s) {
+                              final start = DateTime(s.checkInDate.year, s.checkInDate.month, s.checkInDate.day);
+                              final end = DateTime(s.checkOutDate.year, s.checkOutDate.month, s.checkOutDate.day);
+                              final curr = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+                              return !curr.isBefore(start) && !curr.isAfter(end);
+                            }).toList();
+                            final inStayCity = activeStaysForDate.any((s) {
+                              final c = CityColorHelper.extractCityForStay(s)?.trim().toLowerCase();
+                              return c != null && c.isNotEmpty && (c == candLower || c.contains(candLower) || candLower.contains(c));
+                            });
+
+                            final inFlightCity = flights.where((f) {
+                              final dep = f.departureTime;
+                              final arr = f.arrivalTime;
+                              return (dep.year == _selectedDate.year && dep.month == _selectedDate.month && dep.day == _selectedDate.day) ||
+                                     (arr.year == _selectedDate.year && arr.month == _selectedDate.month && arr.day == _selectedDate.day);
+                            }).any((f) {
+                              final depC = LocationInferenceHelper.extractCityFromAirportString(f.departureAirport).trim().toLowerCase();
+                              final arrC = LocationInferenceHelper.extractCityFromAirportString(f.arrivalAirport).trim().toLowerCase();
+                              return (depC.isNotEmpty && (depC.contains(candLower) || candLower.contains(depC))) ||
+                                     (arrC.isNotEmpty && (arrC.contains(candLower) || candLower.contains(arrC)));
+                            });
+
+                            final inTripDest = existingLocations.isEmpty &&
+                                activeStaysForDate.isEmpty &&
+                                activeTrip.destination.trim().toLowerCase().contains(candLower);
+
+                            if (!alreadyPresent && !isDefaultCountry && !inStayCity && !inFlightCity && !inTripDest) {
+                              if (mounted) setState(() => _isSaving = false);
+                              final dayIndex = activeTrip.daysList.indexWhere((d) =>
+                                  d.year == _selectedDate.year &&
+                                  d.month == _selectedDate.month &&
+                                  d.day == _selectedDate.day);
+                              final dayNumber = dayIndex >= 0 ? dayIndex + 1 : 1;
+
+                              if (context.mounted) {
+                                final shouldAdd = await showDialog<bool>(
+                                  context: context,
+                                  builder: (dialogCtx) => AlertDialog(
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(16)),
+                                    title: Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: AppColors.primaryContainer,
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: const Icon(Icons.add_location_alt_rounded,
+                                              color: AppColors.primary, size: 20),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        const Expanded(
+                                          child: Text(
+                                            'Add to Day Locations?',
+                                            style: TextStyle(
+                                                fontSize: 16, fontWeight: FontWeight.w700),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    content: Text(
+                                      'This activity takes place in "$candidateCity", which is not currently listed in Day $dayNumber\'s locations.\n\nWould you like to add "$candidateCity" to today\'s places?',
+                                      style: const TextStyle(fontSize: 13, height: 1.4),
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.of(dialogCtx).pop(false),
+                                        child: const Text('No, Thanks'),
+                                      ),
+                                      FilledButton(
+                                        onPressed: () => Navigator.of(dialogCtx).pop(true),
+                                        child: const Text('Add Location'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+
+                                if (shouldAdd == true) {
+                                  final currentClean = existingLocations
+                                      .where((l) =>
+                                          l.trim().toLowerCase() !=
+                                          defaultCountry.trim().toLowerCase())
+                                      .toList();
+                                  final updatedLocations = {...currentClean, candidateCity}.toList();
+                                  await repo.updateDayLocations(
+                                      activeTrip.id, _selectedDate, updatedLocations);
+                                }
+                              }
+                            }
                           }
                         }
 

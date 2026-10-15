@@ -53,6 +53,47 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
   int? _resizePreviewDurationMinutes;
   int _resizeStartDurationMinutes = 60;
   double _resizeAccumulatedDeltaY = 0.0;
+  double _resizeInitialGlobalY = 0.0;
+  bool _isHeaderCompact = false;
+
+  Future<void> _commitResizedDuration(
+      Activity act, int durationMin, int startMin) async {
+    final finalDuration = _resizePreviewDurationMinutes ?? durationMin;
+    final newEndMinutes = min(24 * 60 - 1, startMin + finalDuration);
+    final newEndStr = _formatMinutesToHHmm(newEndMinutes);
+    final actToUpdate = act;
+    setState(() {
+      _resizingActivityId = null;
+      _resizePreviewDurationMinutes = null;
+      _resizeAccumulatedDeltaY = 0.0;
+    });
+    if (actToUpdate.endTime != newEndStr) {
+      final updated = actToUpdate.copyWith(endTime: newEndStr);
+      final messenger = ScaffoldMessenger.of(context);
+      try {
+        await ref.read(tripRepositoryProvider).updateActivity(updated);
+        if (mounted) {
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(
+                'Updated duration for ${actToUpdate.title}: $finalDuration min (${actToUpdate.startTime} – $newEndStr)',
+              ),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text('Failed to update activity duration: $e'),
+              backgroundColor: Colors.red.shade700,
+            ),
+          );
+        }
+      }
+    }
+  }
 
   void _changeSelectedDate(DateTime newDate) {
     setState(() {
@@ -765,6 +806,24 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
       });
     }
 
+    // Auto-scroll to specific target minute (e.g. from Edit Activity)
+    final targetMinute = ref.watch(dayPlannerScrollTargetMinuteProvider);
+    if (targetMinute != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_timelineScrollController.hasClients) return;
+        const double hourHeight = 60.0;
+        final double targetOffset =
+            max(0.0, (targetMinute - 30) * (hourHeight / 60.0));
+        _timelineScrollController.animateTo(
+          targetOffset.clamp(
+              0.0, _timelineScrollController.position.maxScrollExtent),
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeOutCubic,
+        );
+        ref.read(dayPlannerScrollTargetMinuteProvider.notifier).setMinute(null);
+      });
+    }
+
     // Resolve Wake-up location & Stay
     final wakeUpInfo = _resolveWakeUpLocation(
       trip: trip,
@@ -1391,9 +1450,13 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 1. MAIN HEADER: Date, Day Number, Location Tags
+          // 1. MAIN HEADER: Date, Day Number, Location Tags (collapsible via double-tap)
           Container(
-            padding: const EdgeInsets.all(14),
+            key: ValueKey('day_planner_day_header_${date.toIso8601String()}'),
+            padding: EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: _isHeaderCompact ? 10 : 14,
+            ),
             decoration: BoxDecoration(
               color: isToday ? AppColors.primary : const Color(0xFFF8FAFC),
               borderRadius:
@@ -1404,11 +1467,113 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                 ),
               ),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
+            child: _isHeaderCompact
+                ? Row(
+                    children: [
+                      Expanded(
+                        child: GestureDetector(
+                          key: const ValueKey('day_planner_header_double_tap_gesture'),
+                          behavior: HitTestBehavior.opaque,
+                          onDoubleTap: () {
+                            setState(() {
+                              _isHeaderCompact = !_isHeaderCompact;
+                            });
+                          },
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  DateFormatters.dayHeader.format(date),
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: isToday ? Colors.white : AppColors.textPrimary,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: isToday
+                                      ? Colors.white.withValues(alpha: 0.2)
+                                      : Colors.grey.shade200,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  '${dayActivities.length + dayFlights.length} ${(dayActivities.length + dayFlights.length) == 1 ? 'item' : 'items'}',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: isToday ? Colors.white : AppColors.textSecondary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                        const SizedBox(width: 8),
+                        InkWell(
+                          onTap: () {
+                            ref.read(focusedTripDateProvider.notifier).setDate(date);
+                            ref.read(itineraryViewModeProvider.notifier).setMode(ItineraryViewMode.full);
+                            ref.read(navTabIndexProvider.notifier).setTab(1);
+                          },
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: isToday
+                                  ? Colors.white.withValues(alpha: 0.25)
+                                  : AppColors.primaryContainer.withValues(alpha: 0.8),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: isToday
+                                    ? Colors.white.withValues(alpha: 0.5)
+                                    : AppColors.primary.withValues(alpha: 0.3),
+                                width: 0.8,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.calendar_view_week_rounded,
+                                  size: 12,
+                                  color: isToday ? Colors.white : AppColors.primary,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Itinerary',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: isToday ? Colors.white : AppColors.primary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
                 Expanded(
-                  child: Column(
+                  child: GestureDetector(
+                    key: const ValueKey('day_planner_header_double_tap_gesture'),
+                    behavior: HitTestBehavior.opaque,
+                    onDoubleTap: () {
+                      setState(() {
+                        _isHeaderCompact = !_isHeaderCompact;
+                      });
+                    },
+                    child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Wrap(
@@ -1580,6 +1745,7 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                     ],
                   ),
                 ),
+                ),
                 const SizedBox(width: 8),
                 // Total Activities & Flights pill
                 Container(
@@ -1647,8 +1813,9 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
             ),
           ),
 
-          // 2. DISTINCTIVE SUB-HEADER: Wake-Up Location
-          _buildWakeUpSubHeader(wakeUpInfo, trip, date),
+          // 2. DISTINCTIVE SUB-HEADER: Wake-Up Location (hidden in compact mode)
+          if (!_isHeaderCompact)
+            _buildWakeUpSubHeader(wakeUpInfo, trip, date),
 
           // 3. 24-HOUR PROPORTIONAL TIMELINE (Scrollable)
           Expanded(
@@ -1660,8 +1827,9 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
             ),
           ),
 
-          // 4. DISTINCTIVE FOOTER: Sleep At Location
-          _buildSleepAtFooter(sleepAtInfo, trip, date),
+          // 4. DISTINCTIVE FOOTER: Sleep At Location (hidden in compact mode)
+          if (!_isHeaderCompact)
+            _buildSleepAtFooter(sleepAtInfo, trip, date),
 
           // 5. BOTTOM ADD ACTIVITY BUTTON
           if (canEdit && isWide)
@@ -1932,6 +2100,7 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
     required DateTime date,
     required bool canEdit,
   }) {
+    final bool isMobile = MediaQuery.sizeOf(context).width < 600;
     const double hourHeight = 60.0;
     const double totalHeight = 24 * hourHeight; // 1440 dp
 
@@ -2031,8 +2200,116 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
           return SizedBox(
             key: _timelineKey,
             height: totalHeight,
-            child: Stack(
-              children: [
+            child: LayoutBuilder(
+              builder: (context, timelineConstraints) {
+                final double availableTimelineWidth =
+                    timelineConstraints.maxWidth > 70
+                        ? (timelineConstraints.maxWidth - 56 - 12)
+                        : 300.0;
+
+                // Minimum card height corresponds to 30 mins (30.0 dp at 60 dp/hour)
+                // so short activities (e.g. 15 mins) have legible titles and adjacent cards don't overlap
+                const double minCardMinutes = 30.0;
+                final double minActivityHeight =
+                    minCardMinutes * (hourHeight / 60.0);
+
+                // 1. Calculate visual boundaries for each activity
+                final activityVisuals = <String, ({double top, double bottom, double height, int startMin})>{};
+                for (final act in activities) {
+                  final sMin = _parseMinutes(act.startTime);
+                  int durMin = 60;
+                  if (act.endTime != null) {
+                    final eMin = _parseMinutes(act.endTime!);
+                    if (eMin > sMin) durMin = eMin - sMin;
+                  }
+                  final isResizing = _resizingActivityId == act.id;
+                  final effDurMin = (isResizing && _resizePreviewDurationMinutes != null)
+                      ? _resizePreviewDurationMinutes!
+                      : durMin;
+                  final calcHeight = effDurMin * (hourHeight / 60.0);
+                  final topPos = sMin * (hourHeight / 60.0);
+                  final cardH = max(minActivityHeight, calcHeight);
+                  activityVisuals[act.id] = (
+                    top: topPos,
+                    bottom: topPos + cardH,
+                    height: cardH,
+                    startMin: sMin,
+                  );
+                }
+
+                // 2. Identify visually overlapping groups and assign horizontal lanes
+                final activityLanes = <String, ({int lane, int totalLanes})>{};
+                final sortedActs = List<Activity>.from(activities)
+                  ..sort((a, b) {
+                    final va = activityVisuals[a.id]!;
+                    final vb = activityVisuals[b.id]!;
+                    final cmp = va.top.compareTo(vb.top);
+                    if (cmp != 0) return cmp;
+                    return vb.height.compareTo(va.height);
+                  });
+
+                final clusters = <List<Activity>>[];
+                List<Activity> currentCluster = [];
+                double clusterMaxBottom = -1;
+
+                for (final act in sortedActs) {
+                  final vis = activityVisuals[act.id]!;
+                  if (currentCluster.isEmpty) {
+                    currentCluster.add(act);
+                    clusterMaxBottom = vis.bottom;
+                  } else if (vis.top < clusterMaxBottom - 1.0) {
+                    // Overlaps visually with current cluster
+                    currentCluster.add(act);
+                    if (vis.bottom > clusterMaxBottom) {
+                      clusterMaxBottom = vis.bottom;
+                    }
+                  } else {
+                    clusters.add(currentCluster);
+                    currentCluster = [act];
+                    clusterMaxBottom = vis.bottom;
+                  }
+                }
+                if (currentCluster.isNotEmpty) {
+                  clusters.add(currentCluster);
+                }
+
+                for (final cluster in clusters) {
+                  if (cluster.length == 1) {
+                    activityLanes[cluster.first.id] = (lane: 0, totalLanes: 1);
+                    continue;
+                  }
+
+                  final laneBottoms = <double>[];
+                  final clusterLaneAssignments = <String, int>{};
+
+                  for (final act in cluster) {
+                    final vis = activityVisuals[act.id]!;
+                    int assignedLane = -1;
+                    for (int l = 0; l < laneBottoms.length; l++) {
+                      if (vis.top >= laneBottoms[l] - 1.0) {
+                        assignedLane = l;
+                        laneBottoms[l] = vis.bottom;
+                        break;
+                      }
+                    }
+                    if (assignedLane == -1) {
+                      assignedLane = laneBottoms.length;
+                      laneBottoms.add(vis.bottom);
+                    }
+                    clusterLaneAssignments[act.id] = assignedLane;
+                  }
+
+                  final totalLanes = laneBottoms.length;
+                  for (final act in cluster) {
+                    activityLanes[act.id] = (
+                      lane: clusterLaneAssignments[act.id]!,
+                      totalLanes: totalLanes,
+                    );
+                  }
+                }
+
+                return Stack(
+                  children: [
             // Background double-tap to add activity at specific hour
             Positioned.fill(
               child: GestureDetector(
@@ -2256,12 +2533,20 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                           ? _resizePreviewDurationMinutes!
                           : durationMin;
 
-                  // Enforce readable minimum height of 48 dp so short activities (<= 15 mins) remain clearly visible
-                  const double minActivityHeight = 48.0;
-                  final double calculatedHeight =
-                      effectiveDurationMin * (hourHeight / 60.0);
-                  final double topPos = startMin * (hourHeight / 60.0);
-                  final double cardHeight = max(minActivityHeight, calculatedHeight);
+                  final vis = activityVisuals[act.id];
+                  final double topPos = vis?.top ?? (startMin * (hourHeight / 60.0));
+                  final double cardHeight =
+                      vis?.height ?? max(minActivityHeight, effectiveDurationMin * (hourHeight / 60.0));
+                  final bool isCompact = cardHeight <= 36.0;
+
+                  final laneInfo = activityLanes[act.id] ?? (lane: 0, totalLanes: 1);
+                  final int lane = laneInfo.lane;
+                  final int totalLanes = laneInfo.totalLanes;
+                  const double laneGap = 4.0;
+                  final double laneWidth = totalLanes <= 1
+                      ? availableTimelineWidth
+                      : (availableTimelineWidth - (totalLanes - 1) * laneGap) / totalLanes;
+                  final double leftPos = 56 + lane * (laneWidth + laneGap);
 
                   final catColor = _getCategoryColor(act.category);
                   final isSelectedOnMap =
@@ -2322,7 +2607,11 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                             Container(width: 4, color: catColor),
                             Expanded(
                               child: Padding(
-                                padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+                                padding: EdgeInsets.fromLTRB(
+                                    isCompact ? 6 : 8,
+                                    isCompact ? 2 : 4,
+                                    isCompact ? 6 : 8,
+                                    isCompact ? 2 : 8),
                                 child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
@@ -2338,16 +2627,16 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                                               Text(
                                                 act.startTime,
                                                 style: TextStyle(
-                                                  fontSize: 10,
+                                                  fontSize: isCompact ? 9.5 : 10,
                                                   fontWeight: FontWeight.w700,
                                                   color: catColor,
                                                 ),
                                               ),
-                                              if (displayEndStr != null) ...[
+                                              if (displayEndStr != null && totalLanes == 1 && laneWidth >= 300) ...[
                                                 Text(
                                                   ' – $displayEndStr',
                                                   style: TextStyle(
-                                                    fontSize: 10,
+                                                    fontSize: isCompact ? 9.5 : 10,
                                                     fontWeight: isResizingThis
                                                         ? FontWeight.w700
                                                         : FontWeight.normal,
@@ -2361,8 +2650,8 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                                                 const SizedBox(width: 4),
                                                 Container(
                                                   padding:
-                                                      const EdgeInsets.symmetric(
-                                                          horizontal: 4,
+                                                      EdgeInsets.symmetric(
+                                                          horizontal: isCompact ? 3 : 4,
                                                           vertical: 1),
                                                   decoration: BoxDecoration(
                                                     color: catColor.withValues(
@@ -2373,7 +2662,7 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                                                   child: Text(
                                                     '${effectiveDurationMin}m',
                                                     style: TextStyle(
-                                                      fontSize: 9,
+                                                      fontSize: isCompact ? 8 : 9,
                                                       fontWeight:
                                                           FontWeight.w800,
                                                       color: catColor,
@@ -2381,12 +2670,12 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                                                   ),
                                                 ),
                                               ],
-                                              const SizedBox(width: 6),
-                                              Flexible(
+                                              const SizedBox(width: 4),
+                                              Expanded(
                                                 child: Text(
                                                   act.title,
-                                                  style: const TextStyle(
-                                                    fontSize: 12,
+                                                  style: TextStyle(
+                                                    fontSize: isCompact ? 11 : 12,
                                                     fontWeight: FontWeight.w700,
                                                     color:
                                                         AppColors.textPrimary,
@@ -2397,7 +2686,7 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                                                 ),
                                               ),
                                               if (act.mealType != null &&
-                                                  act.mealType!.isNotEmpty) ...[
+                                                  act.mealType!.isNotEmpty && totalLanes == 1 && laneWidth >= 300) ...[
                                                 const SizedBox(width: 5),
                                                 Container(
                                                   padding:
@@ -2470,42 +2759,80 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                                         ),
                                         if (canEdit) ...[
                                           const SizedBox(width: 4),
-                                          Draggable<Activity>(
-                                            key: ValueKey(
-                                                'activity_drag_handle_${act.id}'),
-                                            data: act,
-                                            feedback:
-                                                _buildActivityDragFeedback(
-                                                    act,
-                                                    cardHeight,
-                                                    catColor),
-                                            childWhenDragging:
-                                                const SizedBox.shrink(),
-                                            onDragEnd: (_) {
-                                              _hoverDropStartMinutesNotifier.value = null;
-                                              if (_hoverDropStartMinutes != null ||
-                                                  _draggedActivity != null) {
-                                                setState(() {
-                                                  _hoverDropStartMinutes = null;
-                                                  _draggedActivity = null;
-                                                });
-                                              }
-                                            },
-                                            child: Tooltip(
-                                              message:
-                                                  'Drag to change time/order',
-                                              child: MouseRegion(
-                                                cursor:
-                                                    SystemMouseCursors.grab,
-                                                child: Icon(
-                                                  Icons
-                                                      .drag_indicator_rounded,
-                                                  size: 16,
-                                                  color: Colors.grey.shade400,
+                                          isMobile
+                                              ? LongPressDraggable<Activity>(
+                                                  key: ValueKey(
+                                                      'activity_drag_handle_${act.id}'),
+                                                  delay: const Duration(milliseconds: 600),
+                                                  data: act,
+                                                  feedback:
+                                                      _buildActivityDragFeedback(
+                                                          act,
+                                                          cardHeight,
+                                                          catColor),
+                                                  childWhenDragging:
+                                                      const SizedBox.shrink(),
+                                                  onDragEnd: (_) {
+                                                    _hoverDropStartMinutesNotifier.value = null;
+                                                    if (_hoverDropStartMinutes != null ||
+                                                        _draggedActivity != null) {
+                                                      setState(() {
+                                                        _hoverDropStartMinutes = null;
+                                                        _draggedActivity = null;
+                                                      });
+                                                    }
+                                                  },
+                                                  child: Tooltip(
+                                                    message:
+                                                        'Hold to drag and change time/order',
+                                                    child: MouseRegion(
+                                                      cursor:
+                                                          SystemMouseCursors.grab,
+                                                      child: Icon(
+                                                        Icons
+                                                            .drag_indicator_rounded,
+                                                        size: 16,
+                                                        color: Colors.grey.shade400,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                )
+                                              : Draggable<Activity>(
+                                                  key: ValueKey(
+                                                      'activity_drag_handle_${act.id}'),
+                                                  data: act,
+                                                  feedback:
+                                                      _buildActivityDragFeedback(
+                                                          act,
+                                                          cardHeight,
+                                                          catColor),
+                                                  childWhenDragging:
+                                                      const SizedBox.shrink(),
+                                                  onDragEnd: (_) {
+                                                    _hoverDropStartMinutesNotifier.value = null;
+                                                    if (_hoverDropStartMinutes != null ||
+                                                        _draggedActivity != null) {
+                                                      setState(() {
+                                                        _hoverDropStartMinutes = null;
+                                                        _draggedActivity = null;
+                                                      });
+                                                    }
+                                                  },
+                                                  child: Tooltip(
+                                                    message:
+                                                        'Drag to change time/order',
+                                                    child: MouseRegion(
+                                                      cursor:
+                                                          SystemMouseCursors.grab,
+                                                      child: Icon(
+                                                        Icons
+                                                            .drag_indicator_rounded,
+                                                        size: 16,
+                                                        color: Colors.grey.shade400,
+                                                      ),
+                                                    ),
+                                                  ),
                                                 ),
-                                              ),
-                                            ),
-                                          ),
                                         ],
                                       ],
                                     ),
@@ -2537,18 +2864,62 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                               child: GestureDetector(
                                 key: ValueKey('activity_resize_handle_${act.id}'),
                                 behavior: HitTestBehavior.opaque,
-                                onVerticalDragStart: (details) {
+                                // On mobile, do not claim vertical drag immediately to allow smooth timeline scrolling
+                                onVerticalDragStart: isMobile
+                                    ? null
+                                    : (details) {
+                                        _resizeStartDurationMinutes = durationMin;
+                                        _resizeAccumulatedDeltaY = 0.0;
+                                        setState(() {
+                                          _resizingActivityId = act.id;
+                                          _resizePreviewDurationMinutes = durationMin;
+                                        });
+                                      },
+                                onVerticalDragUpdate: isMobile
+                                    ? null
+                                    : (details) {
+                                        _resizeAccumulatedDeltaY += details.delta.dy;
+                                        final deltaMinutes =
+                                            (_resizeAccumulatedDeltaY / (hourHeight / 60.0)).round();
+                                        final rawNewDuration =
+                                            _resizeStartDurationMinutes + deltaMinutes;
+                                        final snappedDuration =
+                                            ((rawNewDuration / 15).round() * 15);
+                                        final maxPossibleDuration =
+                                            max(15, (24 * 60 - 1) - startMin);
+                                        final clamped =
+                                            snappedDuration.clamp(15, maxPossibleDuration);
+                                        if (_resizePreviewDurationMinutes != clamped) {
+                                          setState(() {
+                                            _resizePreviewDurationMinutes = clamped;
+                                          });
+                                        }
+                                      },
+                                onVerticalDragEnd: isMobile
+                                    ? null
+                                    : (details) => _commitResizedDuration(act, durationMin, startMin),
+                                onVerticalDragCancel: isMobile
+                                    ? null
+                                    : () {
+                                        setState(() {
+                                          _resizingActivityId = null;
+                                          _resizePreviewDurationMinutes = null;
+                                          _resizeAccumulatedDeltaY = 0.0;
+                                        });
+                                      },
+                                // Long-press hold gesture arms resize mode and drags to resize on mobile
+                                onLongPressStart: (details) {
                                   _resizeStartDurationMinutes = durationMin;
                                   _resizeAccumulatedDeltaY = 0.0;
+                                  _resizeInitialGlobalY = details.globalPosition.dy;
                                   setState(() {
                                     _resizingActivityId = act.id;
                                     _resizePreviewDurationMinutes = durationMin;
                                   });
                                 },
-                                onVerticalDragUpdate: (details) {
-                                  _resizeAccumulatedDeltaY += details.delta.dy;
-                                  final deltaMinutes =
-                                      (_resizeAccumulatedDeltaY / (hourHeight / 60.0)).round();
+                                onLongPressMoveUpdate: (details) {
+                                  final deltaY = details.globalPosition.dy - _resizeInitialGlobalY;
+                                  final deltaMinutes = (deltaY / (hourHeight / 60.0)).round();
                                   final rawNewDuration =
                                       _resizeStartDurationMinutes + deltaMinutes;
                                   final snappedDuration =
@@ -2563,48 +2934,9 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                                     });
                                   }
                                 },
-                                onVerticalDragEnd: (details) async {
-                                  final finalDuration =
-                                      _resizePreviewDurationMinutes ?? durationMin;
-                                  final newEndMinutes =
-                                      min(24 * 60 - 1, startMin + finalDuration);
-                                  final newEndStr = _formatMinutesToHHmm(newEndMinutes);
-                                  final actToUpdate = act;
-                                  setState(() {
-                                    _resizingActivityId = null;
-                                    _resizePreviewDurationMinutes = null;
-                                    _resizeAccumulatedDeltaY = 0.0;
-                                  });
-                                  if (actToUpdate.endTime != newEndStr) {
-                                    final updated = actToUpdate.copyWith(endTime: newEndStr);
-                                    final messenger = ScaffoldMessenger.of(context);
-                                    try {
-                                      await ref
-                                          .read(tripRepositoryProvider)
-                                          .updateActivity(updated);
-                                      if (mounted) {
-                                        messenger.showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              'Updated duration for ${actToUpdate.title}: $finalDuration min (${actToUpdate.startTime} – $newEndStr)',
-                                            ),
-                                            duration: const Duration(seconds: 2),
-                                          ),
-                                        );
-                                      }
-                                    } catch (e) {
-                                      if (mounted) {
-                                        messenger.showSnackBar(
-                                          SnackBar(
-                                            content: Text('Failed to update activity duration: $e'),
-                                            backgroundColor: Colors.red.shade700,
-                                          ),
-                                        );
-                                      }
-                                    }
-                                  }
-                                },
-                                onVerticalDragCancel: () {
+                                onLongPressEnd: (details) =>
+                                    _commitResizedDuration(act, durationMin, startMin),
+                                onLongPressCancel: () {
                                   setState(() {
                                     _resizingActivityId = null;
                                     _resizePreviewDurationMinutes = null;
@@ -2612,7 +2944,6 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                                   });
                                 },
                                 child: Container(
-                                  height: 14,
                                   alignment: Alignment.center,
                                   decoration: BoxDecoration(
                                     color: isResizingThis
@@ -2638,8 +2969,8 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
                   );
 
                   return Positioned(
-                    left: 56,
-                    right: 12,
+                    left: leftPos,
+                    width: laneWidth,
                     top: topPos,
                     height: cardHeight,
                     child: canEdit
@@ -3028,9 +3359,11 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
               ),
             ],
           ],
-        ),
-      );
-    },
+        );
+      },
+    ),
+  );
+},
   ),
 );
   }
@@ -4023,190 +4356,15 @@ class _DayPlannerViewState extends ConsumerState<DayPlannerView> {
     required List<Stay> stays,
     required List<Flight> flights,
   }) {
-    final parts = location
-        .split(',')
-        .map((p) => p.trim())
-        .where((p) => p.isNotEmpty)
-        .toList();
-    if (parts.isEmpty) return null;
-
-    final countryLower = defaultCountry.toLowerCase();
-
-    // Check comma parts from right to left (skipping country if present)
-    for (int i = parts.length - 1; i >= 0; i--) {
-      final part = parts[i];
-      final partLower = part.toLowerCase();
-
-      // Skip country names
-      if (partLower == countryLower || _isCountryName(partLower)) {
-        continue;
-      }
-
-      if (_isCity(part, trip: trip, stays: stays, flights: flights)) {
-        return _canonicalCityName(part);
-      }
-    }
-
-    // Also check if any substring matches a known city from stays or flights
-    for (final s in stays) {
-      final stayCity = CityColorHelper.extractCityForStay(s);
-      if (stayCity != null && stayCity.isNotEmpty) {
-        if (location.toLowerCase().contains(stayCity.toLowerCase())) {
-          return stayCity;
-        }
-      }
-    }
-
-    for (final f in flights) {
-      final depCity = _extractCityFromAirportString(f.departureAirport);
-      if (depCity.isNotEmpty && location.toLowerCase().contains(depCity.toLowerCase())) {
-        return depCity;
-      }
-      final arrCity = _extractCityFromAirportString(f.arrivalAirport);
-      if (arrCity.isNotEmpty && location.toLowerCase().contains(arrCity.toLowerCase())) {
-        return arrCity;
-      }
-    }
-
-    return null;
+    return LocationInferenceHelper.extractCityCandidate(
+      location,
+      defaultCountry: defaultCountry,
+      trip: trip,
+      stays: stays,
+      flights: flights,
+    );
   }
 
-  static String _extractCityFromAirportString(String str) {
-    if (str.contains('(') && str.contains(')')) {
-      final start = str.indexOf('(') + 1;
-      final end = str.indexOf(')');
-      if (end > start) {
-        final inside = str.substring(start, end).trim();
-        if (inside.length == 3 && inside.toUpperCase() == inside) {
-          return str.substring(0, start - 1).trim();
-        }
-        return inside;
-      }
-    }
-    return str.replaceAll(RegExp(r'\b[A-Z]{3}\b'), '').trim();
-  }
-
-  static bool _isCountryName(String lower) {
-    const countries = {
-      'thailand', 'japan', 'vietnam', 'cambodia', 'singapore',
-      'south korea', 'korea', 'usa', 'united states', 'france',
-      'italy', 'germany', 'spain', 'uk', 'united kingdom',
-      'indonesia', 'malaysia', 'philippines', 'mexico', 'canada',
-      'australia', 'new zealand', 'china', 'india', 'taiwan',
-    };
-    return countries.contains(lower);
-  }
-
-  static bool _isCity(
-    String candidate, {
-    required Trip trip,
-    required List<Stay> stays,
-    required List<Flight> flights,
-  }) {
-    final clean = candidate.trim();
-    if (clean.isEmpty) return false;
-    final lower = clean.toLowerCase();
-
-    // Exclude strings containing non-city words (e.g. bay, cave, island, airport, etc.)
-    final nonCityKeywords = [
-      'bay', 'bahia', 'bahía', 'cave', 'cueva', 'beach', 'playa',
-      'island', 'islands', 'isla', 'islas', 'airport', 'aeropuerto',
-      'terminal', 'gate', 'station', 'estacion', 'estación', 'pier',
-      'port', 'harbor', 'harbour', 'puerto', 'dock', 'cruise',
-      'crucero', 'boat', 'ferry', 'park', 'parque', 'lake', 'lago',
-      'river', 'rio', 'río', 'mountain', 'montaña', 'mount', 'peak',
-      'waterfall', 'cascada', 'temple', 'wat', 'pagoda', 'church',
-      'cathedral', 'mosque', 'museum', 'museo', 'market', 'mercado',
-      'bazaar', 'mall', 'resort', 'hotel', 'hostel', 'villa', 'palace',
-      'palacio', 'castle', 'tower', 'bridge', 'puente', 'street',
-      'road', 'avenue', 'boulevard', 'calle', 'plaza', 'square',
-      'zoo', 'aquarium', 'sanctuary', 'bar', 'cafe', 'café',
-      'restaurant', 'restaurante', 'shop', 'store', 'alley', 'lane',
-    ];
-
-    for (final kw in nonCityKeywords) {
-      final reg = RegExp(r'\b' + RegExp.escape(kw) + r'\b', caseSensitive: false);
-      if (reg.hasMatch(lower)) {
-        return false;
-      }
-    }
-
-    // 1. Matches city from trip stays
-    for (final s in stays) {
-      final c = CityColorHelper.extractCityForStay(s);
-      if (c != null && c.isNotEmpty && c.toLowerCase() == lower) {
-        return true;
-      }
-    }
-
-    // 2. Matches trip start/end location
-    if (trip.startLocation != null && trip.startLocation!.trim().toLowerCase() == lower) {
-      return true;
-    }
-    if (trip.endLocation != null && trip.endLocation!.trim().toLowerCase() == lower) {
-      return true;
-    }
-
-    // 3. Matches flights departure or arrival city
-    for (final f in flights) {
-      final depCity = _extractCityFromAirportString(f.departureAirport).toLowerCase();
-      if (depCity.isNotEmpty && (depCity == lower || lower.contains(depCity))) return true;
-      final arrCity = _extractCityFromAirportString(f.arrivalAirport).toLowerCase();
-      if (arrCity.isNotEmpty && (arrCity == lower || lower.contains(arrCity))) return true;
-    }
-
-    // 4. Matches existing dayLocations in trip
-    if (trip.dayLocations.isNotEmpty) {
-      for (final locs in trip.dayLocations.values) {
-        for (final l in locs) {
-          if (l.trim().toLowerCase() == lower) return true;
-        }
-      }
-    }
-
-    // 5. Common travel cities
-    const knownCities = {
-      'bangkok', 'chiang mai', 'chiang rai', 'phuket', 'krabi', 'pattaya',
-      'ayutthaya', 'hua hin', 'surat thani', 'koh samui', 'samui', 'hanoi',
-      'ha long', 'halong', 'ninh binh', 'da nang', 'danang', 'hoi an', 'hue',
-      'ho chi minh city', 'ho chi minh', 'saigon', 'can tho', 'hai phong',
-      'siem reap', 'phnom penh', 'battambang', 'singapore', 'kuala lumpur',
-      'penang', 'george town', 'tokyo', 'kyoto', 'osaka', 'hiroshima',
-      'nara', 'yokohama', 'sapporo', 'fukuoka', 'nagoya', 'nikko', 'hakone',
-      'kamakura', 'kanazawa', 'takayama', 'kobe', 'miyajima', 'okinawa',
-      'seoul', 'busan', 'incheon', 'jeju', 'taipei', 'kaohsiung', 'hong kong',
-      'macau', 'beijing', 'shanghai', 'london', 'paris', 'rome', 'milan',
-      'florence', 'venice', 'barcelona', 'madrid', 'seville', 'amsterdam',
-      'berlin', 'munich', 'vienna', 'prague', 'budapest', 'zurich', 'geneva',
-      'athens', 'lisbon', 'porto', 'new york', 'san francisco', 'los angeles',
-      'seattle', 'chicago', 'boston', 'miami', 'las vegas', 'honolulu',
-      'vancouver', 'toronto', 'montreal', 'sydney', 'melbourne', 'auckland',
-    };
-
-    return knownCities.contains(lower);
-  }
-
-  static String _canonicalCityName(String text) {
-    final lower = text.trim().toLowerCase();
-    if (lower == 'ha long' || lower == 'halong') return 'Ha Long';
-    if (lower == 'ninh binh') return 'Ninh Binh';
-    if (lower == 'chiang mai') return 'Chiang Mai';
-    if (lower == 'chiang rai') return 'Chiang Rai';
-    if (lower == 'siem reap') return 'Siem Reap';
-    if (lower == 'ho chi minh city' || lower == 'ho chi minh' || lower == 'saigon') return 'Ho Chi Minh City';
-    if (lower == 'da nang' || lower == 'danang') return 'Da Nang';
-    if (lower == 'hoi an') return 'Hoi An';
-    if (lower == 'san francisco') return 'San Francisco';
-    if (lower == 'new york') return 'New York';
-    if (lower == 'los angeles') return 'Los Angeles';
-    if (lower == 'las vegas') return 'Las Vegas';
-    if (lower == 'kuala lumpur') return 'Kuala Lumpur';
-    if (lower == 'hong kong') return 'Hong Kong';
-    return text.trim().split(' ').map((w) {
-      if (w.isEmpty) return w;
-      return w[0].toUpperCase() + w.substring(1).toLowerCase();
-    }).join(' ');
-  }
 
   // ---------------------------------------------------------------------------
   // Location Resolution Helpers

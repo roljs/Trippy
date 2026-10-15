@@ -1,3 +1,4 @@
+import 'city_color_helper.dart';
 import '../../models/models.dart';
 
 /// Helper to infer default country or location for a day based on the most
@@ -165,5 +166,210 @@ class LocationInferenceHelper {
     if (fallbackCountry != null) return fallbackCountry;
 
     return tripDestination.isNotEmpty ? tripDestination : 'Travel';
+  }
+
+  /// Extracts a candidate city from a freeform location/address string.
+  static String? extractCityCandidate(
+    String location, {
+    required String defaultCountry,
+    required Trip trip,
+    List<Stay> stays = const [],
+    List<Flight> flights = const [],
+  }) {
+    final parts = location
+        .split(',')
+        .map((p) => p.trim())
+        .where((p) => p.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return null;
+
+    final countryLower = defaultCountry.toLowerCase();
+
+    // Check comma parts from right to left (skipping country if present)
+    for (int i = parts.length - 1; i >= 0; i--) {
+      final part = parts[i];
+      final partLower = part.toLowerCase();
+
+      // Skip country names
+      if (partLower == countryLower || isCountryName(partLower)) {
+        continue;
+      }
+
+      if (isCity(part, trip: trip, stays: stays, flights: flights)) {
+        return canonicalCityName(part);
+      }
+    }
+
+    // Also check if any substring matches a known city from stays or flights
+    for (final s in stays) {
+      final stayCity = CityColorHelper.extractCityForStay(s);
+      if (stayCity != null && stayCity.isNotEmpty) {
+        if (location.toLowerCase().contains(stayCity.toLowerCase())) {
+          return stayCity;
+        }
+      }
+    }
+
+    for (final f in flights) {
+      final depCity = extractCityFromAirportString(f.departureAirport);
+      if (depCity.isNotEmpty && location.toLowerCase().contains(depCity.toLowerCase())) {
+        return depCity;
+      }
+      final arrCity = extractCityFromAirportString(f.arrivalAirport);
+      if (arrCity.isNotEmpty && location.toLowerCase().contains(arrCity.toLowerCase())) {
+        return arrCity;
+      }
+    }
+
+    // If there is only one part or last non-country part and it's not a common non-city word
+    if (parts.isNotEmpty) {
+      final lastPart = parts.last;
+      final candidate = (isCountryName(lastPart.toLowerCase()) && parts.length > 1)
+          ? parts[parts.length - 2]
+          : lastPart;
+      if (!isCountryName(candidate.toLowerCase()) && !_isNonCityWord(candidate.toLowerCase())) {
+        return canonicalCityName(candidate);
+      }
+    }
+
+    return null;
+  }
+
+  static bool _isNonCityWord(String lower) {
+    const nonCityKeywords = [
+      'bay', 'bahia', 'bahía', 'cave', 'cueva', 'beach', 'playa',
+      'island', 'islands', 'isla', 'islas', 'airport', 'aeropuerto',
+      'terminal', 'gate', 'station', 'estacion', 'estación', 'pier',
+      'port', 'harbor', 'harbour', 'puerto', 'dock', 'cruise',
+      'crucero', 'boat', 'ferry', 'park', 'parque', 'lake', 'lago',
+      'river', 'rio', 'río', 'mountain', 'montaña', 'mount', 'peak',
+      'waterfall', 'cascada', 'temple', 'wat', 'pagoda', 'church',
+      'cathedral', 'mosque', 'museum', 'museo', 'market', 'mercado',
+      'bazaar', 'mall', 'resort', 'hotel', 'hostel', 'villa', 'palace',
+      'palacio', 'castle', 'tower', 'bridge', 'puente', 'street',
+      'road', 'avenue', 'boulevard', 'calle', 'plaza', 'square',
+      'zoo', 'aquarium', 'sanctuary', 'bar', 'cafe', 'café',
+      'restaurant', 'restaurante', 'shop', 'store', 'alley', 'lane',
+    ];
+    for (final kw in nonCityKeywords) {
+      final reg = RegExp(r'\b' + RegExp.escape(kw) + r'\b', caseSensitive: false);
+      if (reg.hasMatch(lower)) return true;
+    }
+    return false;
+  }
+
+  static bool isCity(
+    String candidate, {
+    required Trip trip,
+    List<Stay> stays = const [],
+    List<Flight> flights = const [],
+  }) {
+    final clean = candidate.trim();
+    if (clean.isEmpty) return false;
+    final lower = clean.toLowerCase();
+
+    if (_isNonCityWord(lower)) return false;
+
+    // 1. Matches city from trip stays
+    for (final s in stays) {
+      final c = CityColorHelper.extractCityForStay(s);
+      if (c != null && c.isNotEmpty && c.toLowerCase() == lower) {
+        return true;
+      }
+    }
+
+    // 2. Matches trip start/end location
+    if (trip.startLocation != null && trip.startLocation!.trim().toLowerCase() == lower) {
+      return true;
+    }
+    if (trip.endLocation != null && trip.endLocation!.trim().toLowerCase() == lower) {
+      return true;
+    }
+
+    // 3. Matches flights departure or arrival city
+    for (final f in flights) {
+      final depCity = extractCityFromAirportString(f.departureAirport).toLowerCase();
+      if (depCity.isNotEmpty && (depCity == lower || lower.contains(depCity))) return true;
+      final arrCity = extractCityFromAirportString(f.arrivalAirport).toLowerCase();
+      if (arrCity.isNotEmpty && (arrCity == lower || lower.contains(arrCity))) return true;
+    }
+
+    // 4. Matches existing dayLocations in trip
+    if (trip.dayLocations.isNotEmpty) {
+      for (final locs in trip.dayLocations.values) {
+        for (final l in locs) {
+          if (l.trim().toLowerCase() == lower) return true;
+        }
+      }
+    }
+
+    // 5. Common travel cities
+    const knownCities = {
+      'bangkok', 'chiang mai', 'chiang rai', 'phuket', 'krabi', 'pattaya',
+      'ayutthaya', 'hua hin', 'surat thani', 'koh samui', 'samui', 'hanoi',
+      'ha long', 'halong', 'ninh binh', 'da nang', 'danang', 'hoi an', 'hue',
+      'ho chi minh city', 'ho chi minh', 'saigon', 'can tho', 'hai phong',
+      'siem reap', 'phnom penh', 'battambang', 'singapore', 'kuala lumpur',
+      'penang', 'george town', 'tokyo', 'kyoto', 'osaka', 'hiroshima',
+      'nara', 'yokohama', 'sapporo', 'fukuoka', 'nagoya', 'nikko', 'hakone',
+      'kamakura', 'kanazawa', 'takayama', 'kobe', 'miyajima', 'okinawa',
+      'seoul', 'busan', 'incheon', 'jeju', 'taipei', 'kaohsiung', 'hong kong',
+      'macau', 'beijing', 'shanghai', 'london', 'paris', 'rome', 'milan',
+      'florence', 'venice', 'barcelona', 'madrid', 'seville', 'amsterdam',
+      'berlin', 'munich', 'vienna', 'prague', 'budapest', 'zurich', 'geneva',
+      'bellevue', 'seattle', 'portland', 'vancouver', 'san francisco',
+      'los angeles', 'san diego', 'las vegas', 'new york', 'boston',
+      'chicago', 'miami', 'orlando', 'honolulu', 'denver', 'austin',
+    };
+
+    return knownCities.contains(lower);
+  }
+
+  static bool isCountryName(String lower) {
+    const countries = {
+      'thailand', 'japan', 'vietnam', 'cambodia', 'singapore',
+      'south korea', 'korea', 'usa', 'united states', 'france',
+      'italy', 'germany', 'spain', 'uk', 'united kingdom',
+      'indonesia', 'malaysia', 'philippines', 'mexico', 'canada',
+      'australia', 'new zealand', 'china', 'india', 'taiwan',
+    };
+    return countries.contains(lower);
+  }
+
+  static String extractCityFromAirportString(String str) {
+    if (str.contains('(') && str.contains(')')) {
+      final start = str.indexOf('(') + 1;
+      final end = str.indexOf(')');
+      if (end > start) {
+        final inside = str.substring(start, end).trim();
+        if (inside.length == 3 && inside.toUpperCase() == inside) {
+          return str.substring(0, start - 1).trim();
+        }
+        return inside;
+      }
+    }
+    return str.replaceAll(RegExp(r'\b[A-Z]{3}\b'), '').trim();
+  }
+
+  static String canonicalCityName(String text) {
+    final lower = text.trim().toLowerCase();
+    if (lower == 'ha long' || lower == 'halong') return 'Ha Long';
+    if (lower == 'ninh binh') return 'Ninh Binh';
+    if (lower == 'chiang mai') return 'Chiang Mai';
+    if (lower == 'chiang rai') return 'Chiang Rai';
+    if (lower == 'siem reap') return 'Siem Reap';
+    if (lower == 'ho chi minh city' || lower == 'ho chi minh' || lower == 'saigon') return 'Ho Chi Minh City';
+    if (lower == 'da nang' || lower == 'danang') return 'Da Nang';
+    if (lower == 'hoi an') return 'Hoi An';
+    if (lower == 'san francisco') return 'San Francisco';
+    if (lower == 'new york') return 'New York';
+    if (lower == 'los angeles') return 'Los Angeles';
+    if (lower == 'las vegas') return 'Las Vegas';
+    if (lower == 'kuala lumpur') return 'Kuala Lumpur';
+    if (lower == 'hong kong') return 'Hong Kong';
+    return text.trim().split(' ').map((w) {
+      if (w.isEmpty) return w;
+      return w[0].toUpperCase() + w.substring(1).toLowerCase();
+    }).join(' ');
   }
 }

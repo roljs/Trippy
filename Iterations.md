@@ -333,6 +333,42 @@ In Day Planner, implement the following features:
 
 
        # Iteration #26
-       1. Fix the UI in Day PLanner for activities that last 15mins and are next to others, the adjacent activity overlaps the UI of the 15min activity entirely covering its title.
+       1. Fix the UI in Day PLanner for activities that last 15mins and are next to others, the adjacent activity overlaps the UI of the 15min activity entirely covering its title. Make the minimum size for an activity card in the day planner to be 30mins instead. This doesn't mean activities cannot be shorter than 30mins, it just means that if the activity is shorter than 30mins, the activity card in the day planner will be the same size as a 30min activity card.
        2. Swap the order of the top-level buttong in the top right so that the Trip sharing button shows on the left next to the trip title (only on web, on mobile should remain hidden) and the trip notes, offline and settings are shown on the right  next to the account icon.
        3. When adding activities, do not automatically add new places to the day (at day-level locations). If activity is added via the UI, upon saving the activity, only if the Activity happens in a new place/city, suggest adding the place to the Day, but allow the user to reject. 
+       4. Fix a usability issue that causes accidental activity length changes when dragging the end of the activity, this is very sensitive and easy to do in mobile devices. Users trying to just scroll up and down accidentally hit the edge of an activity and make it longer or shorter. To prevent this, require an additional hold gesture on the edge handle of the activity before entering the mode where the user can change the duration of the activity by dragging. I.e. The user has to long press and hold the bottom edge of the activity (specifically the resize handle) for a certain time (e.g. 1 second) without scrolling to "arm" the resize mode, and only after this "arming" gesture does the edge become resizable via dragging, otherwise, a drag gesture anywhere else on the activity card (including the bottom edge) counts as a normal scroll movement for the timeline. Do the same for the drag control on the top right of the activity cards. 
+       5. Fix an UI issue in the new setting page in mobile screens, that makes the text that reads "Personal Access Tokens (AI Assistants) Model Context Protocol..." wrap into multiple vertical lines because the "Generate Token" occupies all the space on its right. Instead make the text be on top of the button.
+       6. OPtimize the UI real estate in Day PLanner to maximize vertical space for the scrollable hourly timeline on mobile devices. Make the Day header collapsible into a single line with just the date, badge with number of items and "itinerary" button. The other elements can be hidded or shown by douple tapping on the header. I.e. Double-tapping the header must toggle between compact mode and expanded mode. Compact mode must also hide the Wake up at and Sleep at elements, while expanded mode should show all elements as in the current layout. 
+       7. On the Trips tab, make the "+" button to add a trip a floating buttong on the right bottom corner consistent with the layout and coloring style of the other tabs (remove the + button from the toip header). Also fix the rendering of the 4 icons for edit/offline/share/download to avoid the download icon to be rendered outside the trip card.
+       8. OPtimize the UI of the Edit Activity dialog for mobile devices. The Category can be just a single droplist-style control instead of individual buttons for each category (this way it will occupy only one line). Also, add a small icon (like the one used in the Calendar view) that navigates to the Day planner view on the day and scroll position where that activity is. 
+
+    - **Day Planner 30-Min Minimum Card Size (`lib/views/day_planner/day_planner_view.dart`)**:
+      - Configured `minActivityHeight` to 30.0 dp (representing 30 minutes at 60 dp/hour) for all activities under 30 minutes, preventing overlapping cards and ensuring activity titles and times remain completely visible and legible even for 15-minute quick stops.
+      - Integrated visual lane detection so adjacent and partially overlapping activities split lanes dynamically.
+    - **Top-Level Navigation Button Reordering (`lib/views/common/app_nav_scaffold.dart`)**:
+      - Positioned the Trip Sharing chip on the left next to the Trip Title in the AppBar, visible only on web/desktop and hidden cleanly on mobile viewports.
+      - Reordered AppBar right actions: Trip Notes, Offline Travel Mode, and Settings icons placed directly to the left of the User Account button.
+    - **Prompted Day Location Inference with User Confirmation (`lib/views/common/add_activity_sheet.dart`)**:
+      - Extracted city/destination from newly added activity locations via `LocationInferenceHelper.extractCity()`.
+      - When an activity is added in a city not currently listed in that day's locations, displays a confirmation dialog prompting the user to add the place to Day Locations, with full support for user acceptance ("Add Location") or rejection ("No, Thanks").
+    - **Mobile Day Planner Drag & Resize Arming Gestures (`lib/views/day_planner/day_planner_view.dart`)**:
+      - Replaced raw touch drags on mobile resize handle with an explicit long-press gesture (`onLongPressStart` / `onLongPressMoveUpdate` / `onLongPressEnd`) with haptic feedback to "arm" resize mode before changing activity duration, allowing standard touch drags to smoothly scroll the 24-hour timeline without accidental adjustments.
+      - Upgraded mobile card drag handles to `LongPressDraggable<Activity>` with a 600ms hold delay to prevent accidental timeline reordering during vertical touch scrolling.
+    - **Settings Screen Mobile Layout Stack (`lib/views/settings/settings_screen.dart`)**:
+      - In `_buildPatSection`, on mobile screens (< 600dp), stacks the title and description vertically above a full-width "Generate Token" button, preventing text truncation or awkward multi-line column compression.
+      - Replaced unconstrained horizontal Row with right-aligned button layout (`Align(alignment: Alignment.centerRight)`) for the Google Sign-in action, eliminating mobile RenderFlex overflows.
+      - Guarded Firestore streams with safe access checks for headless test environments.
+    - **Collapsible Day Planner Mobile Header (`lib/views/day_planner/day_planner_view.dart`)**:
+      - Added double-tap toggle on the header date/info container (`day_planner_header_double_tap_gesture`) allowing users to collapse the header into a sleek single line with the date, item count badge, and instantaneous Itinerary navigation button.
+      - Compact mode hides the Wake-Up subheader and Sleep-At footer, maximizing vertical scroll real estate on small mobile screens.
+    - **Trips Tab Floating Action Button & Card Overflow Fix (`lib/views/dashboard/trip_dashboard_screen.dart`)**:
+      - Added standard `FloatingActionButton` on bottom-right corner of Trips tab for trip creation (`key: ValueKey('create_trip_fab')`), matching the other navigation tabs and removing the redundant `+` action button from the AppBar.
+      - Wrapped trip card action icon buttons in a responsive `Wrap` with compact visual density and tight padding to prevent the download/delete icon from rendering outside card bounds on narrow mobile screens.
+      - Wrapped date range text in `Expanded` with text ellipsis to prevent header overflow on narrow screens.
+    - **Edit Activity Dialog Mobile Category Dropdown & Navigation (`lib/views/common/add_activity_sheet.dart`)**:
+      - On mobile devices, rendered a single-line `DropdownButtonFormField<ActivityCategory>` replacing multi-line choice chips.
+      - Added Day Planner navigation button (`Icons.open_in_new_rounded`) in the sheet header when editing an existing activity, focusing the target date, setting the scroll target minute position, and switching navigation to the Day Planner.
+
+# Iteration #26
+1. Day planner view: Make the compact view (i.e. collapsed Day header and hidden wake up at and sleep at) the default. When collapsed ad a small and subtle down arrow under the date (without occupying additional vertical space) that indicates the header can be expanded. 
+2. Add a first-time, welcome experience that guides the user through the main features of the app in a non-intrusive way. This should be an optional experience that can be skipped and re-visited at any time from the settings menu.

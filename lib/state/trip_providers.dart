@@ -122,6 +122,18 @@ final focusedTripDateProvider =
     NotifierProvider<FocusedTripDateNotifier, DateTime?>(
         FocusedTripDateNotifier.new);
 
+// Target minute for auto-scrolling the Day Planner timeline (e.g. from Edit Activity)
+class DayPlannerScrollTargetMinuteNotifier extends Notifier<int?> {
+  @override
+  int? build() => null;
+
+  void setMinute(int? minute) => state = minute;
+}
+
+final dayPlannerScrollTargetMinuteProvider =
+    NotifierProvider<DayPlannerScrollTargetMinuteNotifier, int?>(
+        DayPlannerScrollTargetMinuteNotifier.new);
+
 // Stream of all trips for current user
 final userTripsProvider = StreamProvider<List<Trip>>((ref) {
   final repo = ref.watch(tripRepositoryProvider);

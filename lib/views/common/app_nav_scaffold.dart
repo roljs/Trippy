@@ -209,6 +209,24 @@ class _AppNavScaffoldState extends ConsumerState<AppNavScaffold> {
                           ),
                         ),
                       ),
+                      // Iteration 26: Trip sharing button next to trip title (only on web, hidden on mobile)
+                      if (activeTrip != null && !isMobile) ...[
+                        const SizedBox(width: 8),
+                        ActionChip(
+                          avatar: const Icon(Icons.share_rounded, size: 14),
+                          label: Text(
+                            activeTrip.inviteCode,
+                            style: const TextStyle(
+                              fontFamily: 'monospace',
+                              fontWeight: FontWeight.w700,
+                              fontSize: 11,
+                            ),
+                          ),
+                          onPressed: () {
+                            ref.read(navTabIndexProvider.notifier).setTab(5); // Switch to trips tab
+                          },
+                        ),
+                      ],
                     ],
                   ),
                   if (activeTrip != null)
@@ -224,15 +242,7 @@ class _AppNavScaffoldState extends ConsumerState<AppNavScaffold> {
               ),
               actions: [
                 if (activeTrip != null) ...[
-                  // Offline Travel Mode button
-                  IconButton(
-                    icon: const Icon(Icons.cloud_sync_outlined),
-                    tooltip: 'Offline Travel Mode',
-                    onPressed: () {
-                      OfflineSyncDialog.show(context, trip: activeTrip);
-                    },
-                  ),
-                  // Trip-level Notes, Links & Attachments button
+                  // 1. Trip-level Notes, Links & Attachments button
                   IconButton(
                     icon: Badge(
                       isLabelVisible: (activeTrip.notes != null &&
@@ -247,27 +257,16 @@ class _AppNavScaffoldState extends ConsumerState<AppNavScaffold> {
                       EditTripDialog.show(context, ref, activeTrip);
                     },
                   ),
-                ],
-                // Iteration 16: On mobile screens, remove Trip code with sharing button
-                // to avoid truncating trip name when UI real estate is limited
-                if (activeTrip != null && !isMobile) ...[
-                  // Trip Code Quick Badge
-                  ActionChip(
-                    avatar: const Icon(Icons.share_rounded, size: 14),
-                    label: Text(
-                      activeTrip.inviteCode,
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontWeight: FontWeight.w700,
-                        fontSize: 11,
-                      ),
-                    ),
+                  // 2. Offline Travel Mode button
+                  IconButton(
+                    icon: const Icon(Icons.cloud_sync_outlined),
+                    tooltip: 'Offline Travel Mode',
                     onPressed: () {
-                      ref.read(navTabIndexProvider.notifier).setTab(5); // Switch to trips tab
+                      OfflineSyncDialog.show(context, trip: activeTrip);
                     },
                   ),
-                  const SizedBox(width: 4),
                 ],
+                // 3. Settings & AI Tokens
                 IconButton(
                   icon: const Icon(Icons.settings_outlined),
                   tooltip: 'Settings & AI Tokens',
@@ -279,6 +278,7 @@ class _AppNavScaffoldState extends ConsumerState<AppNavScaffold> {
                     );
                   },
                 ),
+                // 4. Account Profile Icon
                 const UserAccountButton(),
                 const SizedBox(width: 8),
               ],

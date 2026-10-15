@@ -199,6 +199,32 @@ class TripDashboardScreen extends ConsumerWidget {
     final currentUserId = ref.watch(currentUserIdProvider);
 
     return Scaffold(
+      floatingActionButton: MediaQuery.sizeOf(context).width < 600
+          ? FloatingActionButton(
+              key: const ValueKey('create_trip_fab'),
+              heroTag: 'create_trip_fab',
+              tooltip: 'Create New Trip',
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              onPressed: () => _showCreateTripDialog(context, ref),
+              child: const Icon(Icons.add, color: Colors.white),
+            )
+          : FloatingActionButton.extended(
+              key: const ValueKey('create_trip_fab'),
+              heroTag: 'create_trip_fab',
+              tooltip: 'Create New Trip',
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              onPressed: () => _showCreateTripDialog(context, ref),
+              icon: const Icon(Icons.add, color: Colors.white),
+              label: const Text(
+                'Create Trip',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
       appBar: AppBar(
         title: const Text('My Trips'),
         actions: [
@@ -257,11 +283,6 @@ class TripDashboardScreen extends ConsumerWidget {
             tooltip: 'Join with Code',
             icon: const Icon(Icons.group_add_rounded),
             onPressed: () => _showJoinTripDialog(context, ref),
-          ),
-          IconButton(
-            tooltip: 'Create New Trip',
-            icon: const Icon(Icons.add_rounded),
-            onPressed: () => _showCreateTripDialog(context, ref),
           ),
           IconButton(
             tooltip: 'Settings & AI Tokens',
@@ -428,16 +449,19 @@ class TripDashboardScreen extends ConsumerWidget {
                             const Icon(Icons.calendar_month_outlined,
                                 size: 14, color: AppColors.textMuted),
                             const SizedBox(width: 6),
-                            Text(
-                              DateFormatters.formatTripDateRange(
-                                  trip.startDate, trip.endDate),
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: AppColors.textSecondary,
-                                fontWeight: FontWeight.w500,
+                            Expanded(
+                              child: Text(
+                                DateFormatters.formatTripDateRange(
+                                    trip.startDate, trip.endDate),
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: AppColors.textSecondary,
+                                  fontWeight: FontWeight.w500,
+                                ),
                               ),
                             ),
-                            const Spacer(),
+                            const SizedBox(width: 8),
                             Container(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 8, vertical: 2),
@@ -616,52 +640,81 @@ class TripDashboardScreen extends ConsumerWidget {
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 12),
+                            const SizedBox(width: 8),
                             // Invite Code
-                            Text(
-                              'Code: ${trip.inviteCode}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontFamily: 'monospace',
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.textSecondary,
+                            Flexible(
+                              child: Text(
+                                'Code: ${trip.inviteCode}',
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontFamily: 'monospace',
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.textSecondary,
+                                ),
                               ),
                             ),
                             const Spacer(),
-                            if (role.canEdit)
-                              IconButton(
-                                icon: const Icon(Icons.edit_note_rounded, size: 22),
-                                tooltip: 'Edit Trip Details, Notes & Attachments',
-                                onPressed: () =>
-                                    _showEditTripModal(context, ref, trip),
+                            Flexible(
+                              flex: 3,
+                              child: Wrap(
+                                alignment: WrapAlignment.end,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                spacing: 2,
+                                runSpacing: 2,
+                                children: [
+                                  if (role.canEdit)
+                                    IconButton(
+                                      visualDensity: VisualDensity.compact,
+                                      padding: const EdgeInsets.all(5),
+                                      constraints: const BoxConstraints(),
+                                      icon: const Icon(Icons.edit_note_rounded, size: 20),
+                                      tooltip: 'Edit Trip Details, Notes & Attachments',
+                                      onPressed: () =>
+                                          _showEditTripModal(context, ref, trip),
+                                    ),
+                                  IconButton(
+                                    visualDensity: VisualDensity.compact,
+                                    padding: const EdgeInsets.all(5),
+                                    constraints: const BoxConstraints(),
+                                    icon: const Icon(Icons.cloud_sync_outlined, size: 19),
+                                    tooltip: 'Offline Travel Mode',
+                                    onPressed: () =>
+                                        OfflineSyncDialog.show(context, trip: trip),
+                                  ),
+                                  IconButton(
+                                    visualDensity: VisualDensity.compact,
+                                    padding: const EdgeInsets.all(5),
+                                    constraints: const BoxConstraints(),
+                                    icon: const Icon(Icons.share_rounded, size: 19),
+                                    tooltip: 'Share & Invite Co-Travelers',
+                                    onPressed: () =>
+                                        _showShareTripModal(context, trip, ref),
+                                  ),
+                                  IconButton(
+                                    visualDensity: VisualDensity.compact,
+                                    padding: const EdgeInsets.all(5),
+                                    constraints: const BoxConstraints(),
+                                    icon: const Icon(Icons.file_download_outlined,
+                                        size: 19),
+                                    tooltip: 'Export Trip Details (.json)',
+                                    onPressed: () =>
+                                        _exportSingleTrip(context, ref, trip),
+                                  ),
+                                  if (role.isOwner)
+                                    IconButton(
+                                      visualDensity: VisualDensity.compact,
+                                      padding: const EdgeInsets.all(5),
+                                      constraints: const BoxConstraints(),
+                                      icon: const Icon(Icons.delete_outline,
+                                          size: 19, color: Colors.red),
+                                      tooltip: 'Delete Trip',
+                                      onPressed: () =>
+                                          _confirmDeleteTrip(context, ref, trip),
+                                    ),
+                                ],
                               ),
-                            IconButton(
-                              icon: const Icon(Icons.cloud_sync_outlined, size: 20),
-                              tooltip: 'Offline Travel Mode',
-                              onPressed: () =>
-                                  OfflineSyncDialog.show(context, trip: trip),
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.share_rounded, size: 20),
-                              tooltip: 'Share & Invite Co-Travelers',
-                              onPressed: () =>
-                                  _showShareTripModal(context, trip, ref),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.file_download_outlined,
-                                  size: 20),
-                              tooltip: 'Export Trip Details (.json)',
-                              onPressed: () =>
-                                  _exportSingleTrip(context, ref, trip),
-                            ),
-                            if (role.isOwner)
-                              IconButton(
-                                icon: const Icon(Icons.delete_outline,
-                                    size: 20, color: Colors.red),
-                                tooltip: 'Delete Trip',
-                                onPressed: () =>
-                                    _confirmDeleteTrip(context, ref, trip),
-                              ),
                           ],
                         ),
                       ],
